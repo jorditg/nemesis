@@ -240,8 +240,9 @@ matrix_type nn::FF_get_2nd_matrix_for_product(cl_uint order) {
 
 }
 
+
 matrix_type nn::FF_get_result_matrix_for_product(cl_uint order) {
-    return matrix_type((order%2)?*outputBuffer2:*outputBuffer1,
+    return matrix_type(outputBuffer(order),
                        elementsPerLayer[order+1],
                        numberOfTrainingData);
 }
@@ -297,11 +298,34 @@ void nn::device2HostOutput2Transfer() {
     queue->finish();
 }
 
-void nn::FF() {
-    for ( cl_uint i = 0; i < get_number_of_product_matrices(); i++ ) {
+void nn::device2HostTransfer(const cl::Buffer & buffer, size_t size) {
+    queue->enqueueMapBuffer(buffer,
+                            CL_TRUE,  // blocking map
+                            CL_MAP_READ,
+                            0,
+                            size);
+
+    // Finish here is only required for correct time measurment
+    // on the next iteration
+    // It does not affect correctness of calculations because
+    // you use the in-order OpenCL queue here.
+    queue->finish();    
+}
+
+std::vector<cl_float> & nn::FF() {
+    const cl_uint N = get_number_of_product_matrices();
+    
+    for ( cl_uint i = 0; i < N; i++ ) {
         matrix_type A = FF_get_1st_matrix_for_product(i);
         matrix_type B = FF_get_2nd_matrix_for_product(i);
         matrix_type C = FF_get_result_matrix_for_product(i);
         matmult->run(A, B, C);
     }
+    
+    
+    std::vector<cl_float> &result = output(N-1);
+    // transferimos los datos finales calculados de device a host
+    device2HostTransfer(outputBuffer(N-1), result.size());
+    // devolvemos referencia a vector output en host que contiene los resultados finales
+    return result;
 }

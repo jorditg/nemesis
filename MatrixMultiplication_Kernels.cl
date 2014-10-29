@@ -73,11 +73,22 @@ __kernel void mmmKernel(__global float4 *matrixA,
         sum3.z += tempA3.x * tempB0.z + tempA3.y * tempB1.z + tempA3.z * tempB2.z + tempA3.w * tempB3.z;
         sum3.w += tempA3.x * tempB0.w + tempA3.y * tempB1.w + tempA3.z * tempB2.w + tempA3.w * tempB3.w;
     }
+    
+    // Calculate the sigmoid function of the sum
+    
+    sum0 = 1.0f/(1.0f+exp(-sum0));
+    sum1 = 1.0f/(1.0f+exp(-sum1));
+    sum2 = 1.0f/(1.0f+exp(-sum2));
+    sum3 = 1.0f/(1.0f+exp(-sum3));
+    
+    // end of calculation of sigmoid function
+    
+    
     matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 0) * widthB] = sum0;
     matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 1) * widthB] = sum1;
     matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 2) * widthB] = sum2;
     matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 3) * widthB] = sum3;
-}
+ }
 
 
 /* Matrix A is cached into local memory block */
@@ -156,6 +167,16 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
         }
 		barrier(CLK_LOCAL_MEM_FENCE);
     }
+    
+    // Calculate the sigmoid function of the sum
+    
+    sum0 = 1.0f/(1.0f+exp(-sum0));
+    sum1 = 1.0f/(1.0f+exp(-sum1));
+    sum2 = 1.0f/(1.0f+exp(-sum2));
+    sum3 = 1.0f/(1.0f+exp(-sum3));
+    
+    // end of calculation of sigmoid function
+    
     /* Write 16 values to matrixC */
     matrixC[globalPos] = sum0;
     matrixC[globalPos +  get_global_size(0)] = sum1;

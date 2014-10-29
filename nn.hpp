@@ -54,25 +54,28 @@ class nn {
     matrix_type FF_get_2nd_matrix_for_product(cl_uint order);
     matrix_type FF_get_result_matrix_for_product(cl_uint order);
 
-    // matrix multiplication available kernels
-    void execute_mat_mult_mmmKernel_local(matrix_type const &A,
-                                        matrix_type const &B,
-                                        matrix_type const &result);
-    void execute_mat_mult_mmmKernel(matrix_type const &A,
-                                  matrix_type const &B,
-                                  matrix_type const &result);
+    inline cl::Buffer & outputBuffer(cl_uint order) {
+        return (order%2)?*outputBuffer2:*outputBuffer1;
+    };
 
-    // memory transfer functions from device to host
+    inline std::vector<cl_float> & output(cl_uint order) {
+        return (order%2)?output2:output1;
+    };
+    
+     // memory transfer functions from device to host
     void device2HostWeightsTransfer();
     void device2HostOutput1Transfer();
     void device2HostOutput2Transfer();
+    
+    void device2HostTransfer(const cl::Buffer & buffer, size_t size);
 
     public:
     explicit nn(const std::string &filename);
     ~nn();
 
     void populate_random_weights(cl_float min, cl_float max);
-    void FF();
+    
+    std::vector<cl_float> & FF();
 };
 
 #endif

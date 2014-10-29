@@ -8,6 +8,8 @@
 #include <string>
 #include <iostream>
 
+#include <algorithm>    // std::min
+
 #include "OpenCLMatrixMultiplication.hpp"
 
 OpenCLMatrixMultiplication::~OpenCLMatrixMultiplication() {
@@ -60,13 +62,19 @@ void OpenCLMatrixMultiplication::opencl_select_kernel() {
 void OpenCLMatrixMultiplication::run_mmmKernel_local(matrix_type const &A,
                                                matrix_type const &B,
                                                matrix_type const &result) {
-    const size_t blockSize = 8;
     
     const size_t global_size[2] = {size_t(result.width/4),
                                    size_t(result.height/4)};
+    
+    // Proposed block size = 8
+    size_t blockSize = 8;
+    blockSize = std::min(global_size[1], blockSize);
+    blockSize = std::min(global_size[0], blockSize);
+    // if global size < block size the reduce block size to global size
+    
+    
     // float4 elements in kernel
-
-    const size_t local_size[2] = {blockSize, blockSize };
+    const size_t local_size[2] = { blockSize, blockSize };
 
     // -----------------------------------------------------------------------
     // Setting kernel arguments
