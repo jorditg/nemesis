@@ -88,9 +88,16 @@ void nn::populate_random_weights(cl_float min, cl_float max) {
     *it = dist(gen);
 }
 
+void nn::populate_fixed_weights() {
+  
+  for (std::vector<cl_float>::iterator it = weights.begin() ;
+       it != weights.end(); ++it)
+    *it = 0.00005;
+}
+
 nn::nn(const std::string &filename) {
     
-    opencl_initialize();  
+    opencl_initialize();
     
     // load input data into host memory
     load_csv_data(filename, inputs, t, numberOfTrainingData,
@@ -101,6 +108,8 @@ nn::nn(const std::string &filename) {
     for ( cl_int i = 0; i < numberOfLayers-1; i++ )
         numberOfWeights += elementsPerLayer[i]*elementsPerLayer[i+1];
     weights.resize(numberOfWeights);
+
+    populate_fixed_weights();
     
     // outputs buffer
     cl_uint maxLayerNeurons = *std::max_element(std::begin(elementsPerLayer)+1,
@@ -152,28 +161,27 @@ void nn::opencl_device_memory_allocation() {
     inputsBuffer = new cl::Buffer(*context,
                                   CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
                                   inputs.size()*sizeof(cl_float),
-                                  (void *) &inputs[0]);
-    
+                                  &inputs[0]);
 
     weightsBuffer = new cl::Buffer(*context,
                                    CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
                                    weights.size()*sizeof(cl_float),
-                                   (void *) &weights[0]);
+                                   &weights[0]);
     
     tBuffer = new cl::Buffer(*context,
                              CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
                              t.size()*sizeof(cl_float),
-                             (void *) &t[0]);
+                             &t[0]);
             
     outputBuffer1 = new cl::Buffer(*context,
                                    CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
                                    output1.size()*sizeof(cl_float),
-                                   (void *) &output1[0]);
+                                   &output1[0]);
 
     outputBuffer2 = new cl::Buffer(*context,
                                    CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
                                    output2.size(),
-                                   (void *) &output2[0]);
+                                   &output2[0]);
 }
 
 void nn::opencl_cleanup() {
@@ -309,7 +317,7 @@ void nn::device2HostTransfer(const cl::Buffer & buffer, size_t size) {
     // on the next iteration
     // It does not affect correctness of calculations because
     // you use the in-order OpenCL queue here.
-    queue->finish();    
+    queue->finish();
 }
 
 std::vector<cl_float> & nn::FF() {
@@ -321,11 +329,15 @@ std::vector<cl_float> & nn::FF() {
         matrix_type C = FF_get_result_matrix_for_product(i);
         matmult->run(A, B, C);
     }
-    
-    
+
+
     std::vector<cl_float> &result = output(N-1);
     // transferimos los datos finales calculados de device a host
     device2HostTransfer(outputBuffer(N-1), result.size());
-    // devolvemos referencia a vector output en host que contiene los resultados finales
+    // devolvemos referencia a vector output en host que contiene
+    // los resultados finales
+    
+    print_vector(result, 8);
+
     return result;
 }

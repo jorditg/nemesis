@@ -74,6 +74,7 @@ class nn {
     ~nn();
 
     void populate_random_weights(cl_float min, cl_float max);
+    void populate_fixed_weights();
     
     std::vector<cl_float> & FF();
 };
