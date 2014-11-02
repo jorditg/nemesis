@@ -38,6 +38,9 @@ class nn {
     OpenCLMatrixMultiplication *matmult;
     // OpenCLCrossEntropy *ce;
 
+    void load_weights(const std::string & filename,
+                      std::vector<cl_float> &weights);
+
     void load_csv_data(const std::string & filename,
                      std::vector<cl_float> & input,
                      std::vector<cl_float> & output,

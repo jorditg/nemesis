@@ -27,8 +27,11 @@ __kernel void mmmKernel(__global float4 *matrixA,
                         __global float4 *matrixB,
                         __global float4 *matrixC,
                         int widthA,
-                        int widthB)
+                        int widthB, 
+                        int offsetB)
 {
+    // offsetB is the offset from begining where the matrix of weights begin
+    
     int2 pos = (int2)(get_global_id(0), get_global_id(1));
 
 
@@ -39,6 +42,7 @@ __kernel void mmmKernel(__global float4 *matrixA,
 
     /* Vectorization of input Matrices reduces their width by a factor of 4 */
     widthB /= 4;
+    offsetB /= 4;
 
     for(int i = 0; i < widthA; i=i+4)
     {
@@ -48,10 +52,10 @@ __kernel void mmmKernel(__global float4 *matrixA,
         float4 tempA3 = matrixA[i/4 + ((pos.y << TILEY_SHIFT) + 3) * (widthA / 4)];
 
         //Matrix B is not transposed 
-        float4 tempB0 = matrixB[pos.x + i * widthB];	
-        float4 tempB1 = matrixB[pos.x + (i + 1) * widthB];
-        float4 tempB2 = matrixB[pos.x + (i + 2) * widthB];
-        float4 tempB3 = matrixB[pos.x + (i + 3) * widthB];
+        float4 tempB0 = matrixB[offsetB + pos.x + i * widthB];	
+        float4 tempB1 = matrixB[offsetB + pos.x + (i + 1) * widthB];
+        float4 tempB2 = matrixB[offsetB + pos.x + (i + 2) * widthB];
+        float4 tempB3 = matrixB[offsetB + pos.x + (i + 3) * widthB];
 
         sum0.x += tempA0.x * tempB0.x + tempA0.y * tempB1.x + tempA0.z * tempB2.x + tempA0.w * tempB3.x;
         sum0.y += tempA0.x * tempB0.y + tempA0.y * tempB1.y + tempA0.z * tempB2.y + tempA0.w * tempB3.y;
@@ -97,6 +101,7 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
                               __global float4 *matrixB,
                               __global float4* matrixC,
                               int widthA,
+                              int offsetB,
                               __local float4 *blockA)
 {
     int blockPos = get_local_id(0) + get_local_size(0) * (get_local_id(1) << TILEY_SHIFT); //Should be : localId * (TILEX / 4) (float4)
@@ -111,6 +116,7 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
     float4 sum3 = (float4)(0);
 
     int temp = widthA / 4;
+    offsetB /= 4;
 
     /* This loop runs for number of blocks of A in horizontal direction */
     for(int i = 0; i < (temp / get_local_size(0)); i++)
@@ -119,15 +125,15 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
         int globalPosA = i * get_local_size(0) + get_local_id(0) + (get_global_id(1) << TILEY_SHIFT) * temp;
 
         /* Load values in blockA from matrixA */
-        blockA[blockPos] =							matrixA[globalPosA];
-        blockA[blockPos + get_local_size(0)] =		matrixA[globalPosA + temp];
-        blockA[blockPos + 2 * get_local_size(0)] =	matrixA[globalPosA + 2 * temp];
-        blockA[blockPos + 3 * get_local_size(0)] =	matrixA[globalPosA + 3 * temp];
+        blockA[blockPos] = matrixA[globalPosA];
+        blockA[blockPos + get_local_size(0)] = matrixA[globalPosA + temp];
+        blockA[blockPos + 2 * get_local_size(0)] = matrixA[globalPosA + 2 * temp];
+        blockA[blockPos + 3 * get_local_size(0)] = matrixA[globalPosA + 3 * temp];
 
         barrier(CLK_LOCAL_MEM_FENCE);
 
         /* Calculate global ids of threads from the particular block to load from matrix B depending on i */
-        int globalPosB = get_global_id(0) + ((i * get_local_size(0)) << TILEY_SHIFT) * get_global_size(0);
+        int globalPosB = offsetB + get_global_id(0) + ((i * get_local_size(0)) << TILEY_SHIFT) * get_global_size(0);
 
         /* This loop runs for number of threads in horizontal direction in the block of A */
         for(int j = 0; j < get_local_size(0) * 4; j=j+4)

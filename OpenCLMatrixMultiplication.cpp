@@ -63,8 +63,8 @@ void OpenCLMatrixMultiplication::run_mmmKernel_local(matrix_type const &A,
                                                matrix_type const &B,
                                                matrix_type const &result) {
     
-    const size_t global_size[2] = {size_t(result.width/4),
-                                   size_t(result.height/4)};
+    const size_t global_size[2] = {size_t(result.cols/4),
+                                   size_t(result.rows/4)};
     
     // Proposed block size = 8
     size_t blockSize = 8;
@@ -82,8 +82,9 @@ void OpenCLMatrixMultiplication::run_mmmKernel_local(matrix_type const &A,
     kernel->setArg(0, A.data);
     kernel->setArg(1, B.data);
     kernel->setArg(2, result.data);
-    kernel->setArg(3, A.width);
-    kernel->setArg(4, cl::__local((blockSize*4)*(blockSize*4)*sizeof(cl_float)));
+    kernel->setArg(3, A.cols);
+    kernel->setArg(4, B.offset);        
+    kernel->setArg(5, cl::__local((blockSize*4)*(blockSize*4)*sizeof(cl_float)));
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
@@ -113,8 +114,8 @@ void OpenCLMatrixMultiplication::run_mmmKernel(matrix_type const &A,
                                          matrix_type const &result) {
     const size_t blockSize = 8;
     
-    const size_t global_size[2] = {size_t(result.width/4),
-                                   size_t(result.height/4)};
+    const size_t global_size[2] = {size_t(result.cols/4),
+                                   size_t(result.rows/4)};
     // float4 elements in kernel
 
     const size_t local_size[2] = {blockSize, blockSize};
@@ -125,8 +126,9 @@ void OpenCLMatrixMultiplication::run_mmmKernel(matrix_type const &A,
     kernel->setArg(0, A.data);
     kernel->setArg(1, B.data);
     kernel->setArg(2, result.data);
-    kernel->setArg(3, A.width);
-    kernel->setArg(4, B.width);
+    kernel->setArg(3, A.cols);
+    kernel->setArg(4, B.cols);
+    kernel->setArg(5, B.offset);
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on

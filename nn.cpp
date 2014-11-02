@@ -1,20 +1,58 @@
 // Copyright 2014 <Jordi de la Torre>
 
-#include <cassert>
 
-#include <vector>
-#include <algorithm>
-#include <string>
-#include <iostream>     // cout, endl
-#include <fstream>      // fstream
+#include <cassert>
 
 #include <boost/tokenizer.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/uniform_real_distribution.hpp>
 
+#include <vector>
+#include <algorithm>
+#include <string>
+
+#include <iostream>     // cout, endl
+#include <fstream>      // fstream
+
+
 #include "nn.hpp"
 #include "OpenCLMatrixMultiplication.hpp"
 #include "common.hpp"
+
+void nn::load_weights(const std::string & filename,
+                       std::vector<cl_float> &weights) {
+    std::ifstream in(filename.c_str());
+    if (!in.is_open()) {
+        std::cout << "File already opened. Exiting\n";
+        exit(1);
+    }
+
+    std::string line;
+
+    typedef boost::tokenizer< boost::escaped_list_separator<char> > Tokenizer;
+    std::vector< std::string > vec;
+    std::vector<cl_float>::iterator wit = weights.begin();
+    
+    while (getline(in, line)) {
+        Tokenizer tok(line);
+        vec.assign(tok.begin(), tok.end());
+        // vector now contains strings from one row, output to cout here
+        // std::copy(vec.begin(), vec.end(),
+        //           std::ostream_iterator<std::string>(std::cout, "|"));
+        // std::cout << "\n----------------------" << std::endl;
+
+        // check that there is not incomplete data
+
+        
+        for (std::vector<std::string>::iterator it = vec.begin();
+             it != vec.end(); ++it) {
+          *wit = std::stof(*it);
+          wit++;
+        }
+    }
+    
+    assert(wit == weights.end());
+}
 
 
 void nn::load_csv_data(const std::string & filename,
@@ -109,8 +147,8 @@ nn::nn(const std::string &filename) {
         numberOfWeights += elementsPerLayer[i]*elementsPerLayer[i+1];
     weights.resize(numberOfWeights);
 
-    populate_fixed_weights();
-    
+    load_weights("weights.txt", weights);
+
     // outputs buffer
     cl_uint maxLayerNeurons = *std::max_element(std::begin(elementsPerLayer)+1,
                                                std::end(elementsPerLayer));
@@ -216,17 +254,18 @@ void nn::opencl_cleanup() {
 matrix_type nn::FF_get_1st_matrix_for_product(cl_uint order) {
     if (order == 0) {
         return matrix_type(*inputsBuffer,
-                           elementsPerLayer[0],
-                           numberOfTrainingData);
+                           numberOfTrainingData,           
+                           elementsPerLayer[0]
+                           );
     } else {
         if (order % 2) {
-            return matrix_type(*outputBuffer1,
-                               elementsPerLayer[order],
-                               numberOfTrainingData);
+            return matrix_type(*outputBuffer1,                               
+                               numberOfTrainingData,
+                               elementsPerLayer[order]);
         } else {
             return matrix_type(*outputBuffer2,
-                               elementsPerLayer[order],
-                               numberOfTrainingData);
+                               numberOfTrainingData,
+                               elementsPerLayer[order]);
         }
     }
 }
@@ -237,22 +276,20 @@ matrix_type nn::FF_get_2nd_matrix_for_product(cl_uint order) {
     cl_uint offset = 0;
     for (cl_uint i = 0; i < order; i++)
         offset += elementsPerLayer[i]*elementsPerLayer[i+1];
-    offset++;
+    //offset++;
 
-    // ??¿¿ PENDING ??¿¿
-    // offset to be IMPLEMENTED
-
-    return matrix_type(*weightsBuffer /* + offset */,
+    return matrix_type(*weightsBuffer,
+                       elementsPerLayer[order],
                        elementsPerLayer[order+1],
-                       elementsPerLayer[order]);
+                       offset);
 
 }
 
 
 matrix_type nn::FF_get_result_matrix_for_product(cl_uint order) {
     return matrix_type(outputBuffer(order),
-                       elementsPerLayer[order+1],
-                       numberOfTrainingData);
+                       numberOfTrainingData,
+                       elementsPerLayer[order+1]);
 }
 
 
