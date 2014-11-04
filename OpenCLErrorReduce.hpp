@@ -24,8 +24,8 @@ public:
                             const cl::Context & c, 
                             const std::vector<cl::Device> & d,
                             const cl::CommandQueue & q,
-                            matrix_type const & Y,
-                            matrix_type const & T) 
+                            matrix const & Y,
+                            matrix const & T) 
                             : context(c), devices(d), queue(q), y(Y), t(T) {
         opencl_initialize();
     };
@@ -39,11 +39,10 @@ private:
     size_t global_size[1];
     size_t local_size[1];
     
-    matrix_type const & y;
-    matrix_type const & t;
+    matrix const & y;
+    matrix const & t;
     
-    std::vector<cl_float> error;
-    cl::Buffer *errorBuffer;
+    matrix error;
     
     cl::Program *program;    
     cl::Kernel *kernel;

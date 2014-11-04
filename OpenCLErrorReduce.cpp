@@ -29,16 +29,11 @@ void OpenCLErrorReduce::opencl_initialize() {
 
     assert(global_size[0] % local_size[0] == 0);
     
-    const size_t error_size = global_size[0]/local_size[0];
+    const size_t error_size = 4 * global_size[0]/local_size[0];
     
-    error.resize(error_size);
-    
-    cl_int err;
-    errorBuffer = new cl::Buffer(context, 
-                                 CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-                                 error_size*sizeof(cl_float),
-                                 &error[0],
-                                 &err);
+    error.hostData.resize(error_size);    
+    error.createBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR);
+
     
     // create a CL program using kernel source
     std::string sourceFile = "Reduction_kernels.cl";
@@ -68,9 +63,9 @@ cl_float OpenCLErrorReduce::run_CE_Kernel_local() {
     // -----------------------------------------------------------------------
     // Setting kernel arguments
     // -----------------------------------------------------------------------    
-    kernel->setArg(0, y.data);
-    kernel->setArg(1, t.data);
-    kernel->setArg(2, *errorBuffer);
+    kernel->setArg(0, y->deviceData);
+    kernel->setArg(1, t->deviceData);
+    kernel->setArg(2, error->deviceData);
     kernel->setArg(4, cl::__local(local_size[0] * 4 * sizeof(cl_float)));
 
     // -----------------------------------------------------------------------
@@ -93,13 +88,12 @@ cl_float OpenCLErrorReduce::run_CE_Kernel_local() {
 
     std::cout << "CE kernel finished\n";
     
-    const size_t size = 4 * global_size[0] / local_size[0];
-    queue.enqueueMapBuffer(*errorBuffer, CL_TRUE,    // blocking map
-                           CL_MAP_READ, 0, size);
+    error.readFromDevice(queue);
     
+    std::vector<cl_float> & e = error.hostData;
     cl_float ce = 0.0;
-    for(size_t i = 0; i < error.size(); i++) {
-        ce += error[i];
+    for(size_t i = 0; i < e.size(); i++) {
+        ce += e[i];
     }
     
     return ce;
