@@ -36,7 +36,8 @@ class nn {
     cl::Buffer *outputBuffer2;
 
     OpenCLMatrixMultiplication *matmult;
-    // OpenCLCrossEntropy *ce;
+    
+    OpenCLErrorReduce *ce;
 
     void load_weights(const std::string & filename,
                       std::vector<cl_float> &weights);

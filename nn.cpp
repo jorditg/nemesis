@@ -160,6 +160,10 @@ nn::nn(const std::string &filename) {
 
     // device memory allocation
     opencl_device_memory_allocation();
+
+    // instantitate kernels
+    matmult = new OpenCLMatrixMultiplication(*context, devices, 0, *queue);
+    ce = new OpenCLErrorReduce(*context, devices, *queue, y, t);
 };
 
 nn::~nn() {
@@ -182,9 +186,6 @@ void nn::opencl_initialize() {
    
     // Create queue of first device
     queue = new cl::CommandQueue(*context, devices[0]);
-    
-    // instantitate kernels
-    matmult = new OpenCLMatrixMultiplication(*context, devices, 0, *queue);
 }
 
 void nn::opencl_device_memory_allocation() {
@@ -230,10 +231,10 @@ void nn::opencl_cleanup() {
     delete outputBuffer1;
     delete outputBuffer2;
     
+    delete ce;
     delete matmult;
     delete queue;
     delete context;
-    // delete ce;
 }
 
 /*
