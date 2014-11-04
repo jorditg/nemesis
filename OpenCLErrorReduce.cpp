@@ -7,13 +7,14 @@
 #include <cassert>
 
 #include <string>
+#include <algorithm>
+#include <vector>
 #include <iostream>
 
 #include "OpenCLErrorReduce.hpp"
 
 
 OpenCLErrorReduce::~OpenCLErrorReduce() {
-    delete errorBuffer;
     delete kernel;
     delete program;
 }
@@ -31,7 +32,7 @@ void OpenCLErrorReduce::opencl_initialize() {
     
     const size_t error_size = 4 * global_size[0]/local_size[0];
     
-    error.hostData.resize(error_size);    
+    error.hostData.resize(error_size);
     error.createBuffer(context, CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR);
 
     
@@ -49,7 +50,7 @@ void OpenCLErrorReduce::opencl_initialize() {
     
     try {
         program->build(devices);
-    } catch(const cl::Error &e) { // get compilation log in case of failure
+    } catch(const cl::Error &e) {  // get compilation log in case of failure
         std::cerr << e.what() << "returned err: " << e.err() << std::endl <<
         program->getBuildInfo<CL_PROGRAM_BUILD_LOG>(devices[0]) << std::endl;
     }
@@ -63,9 +64,9 @@ cl_float OpenCLErrorReduce::run_CE_Kernel_local() {
     // -----------------------------------------------------------------------
     // Setting kernel arguments
     // -----------------------------------------------------------------------    
-    kernel->setArg(0, y->deviceData);
-    kernel->setArg(1, t->deviceData);
-    kernel->setArg(2, error->deviceData);
+    kernel->setArg(0, y.deviceData);
+    kernel->setArg(1, t.deviceData);
+    kernel->setArg(2, error.deviceData);
     kernel->setArg(4, cl::__local(local_size[0] * 4 * sizeof(cl_float)));
 
     // -----------------------------------------------------------------------
@@ -76,7 +77,7 @@ cl_float OpenCLErrorReduce::run_CE_Kernel_local() {
     // how work is devided among work-groups and work-items.
     // -----------------------------------------------------------------------
   
-    std::cout << "Launching for device\n" 
+    std::cout << "Launching for device\n"
             << " (global size: " << global_size[0] << ")\n"
             << " (local size: " << local_size[0] << ")\n";
     
@@ -92,7 +93,7 @@ cl_float OpenCLErrorReduce::run_CE_Kernel_local() {
     
     std::vector<cl_float> & e = error.hostData;
     cl_float ce = 0.0;
-    for(size_t i = 0; i < e.size(); i++) {
+    for (size_t i = 0; i < e.size(); i++) {
         ce += e[i];
     }
     

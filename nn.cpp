@@ -1,19 +1,12 @@
 // Copyright 2014 <Jordi de la Torre>
 
-
-#include <cassert>
-
-#include <boost/tokenizer.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/uniform_real_distribution.hpp>
-
+#include <cassert>
 #include <vector>
 #include <algorithm>
 #include <string>
-
-#include <iostream>     // cout, endl
-#include <fstream>      // fstream
-
+#include <iostream>
 
 #include "nn.hpp"
 #include "OpenCLMatrixMultiplication.hpp"
@@ -22,16 +15,16 @@
 void nn::populate_random_weights(cl_float min, cl_float max) {
   boost::random::mt19937 gen;
   boost::random::uniform_real_distribution<> dist(min, max);
-  
-  for (std::vector<cl_float>::iterator it = weights.begin() ;
-       it != weights.end(); ++it)
+
+  for (std::vector<cl_float>::iterator it = weights.hostData.begin();
+       it != weights.hostData.end(); ++it)
     *it = dist(gen);
 }
 
 void nn::populate_fixed_weights() {
   
-  for (std::vector<cl_float>::iterator it = weights.begin() ;
-       it != weights.end(); ++it)
+  for (std::vector<cl_float>::iterator it = weights.hostData.begin() ;
+       it != weights.hostData.end(); ++it)
     *it = 0.00005;
 }
 
@@ -46,13 +39,13 @@ nn::nn(const std::string &filename) {
     context = new cl::Context(devices);
    
     // Create queue of first device
-    queue = new cl::CommandQueue(*context, devices[0]);    
-    
+    queue = new cl::CommandQueue(*context, devices[0]);
+
     // load input data into host memory
     load_csv_data(filename, inputs.hostData, t.hostData, numberOfTrainingData,
                   numberOfLayers, elementsPerLayer);
     
-    // initialize rows and cols 
+    // initialize rows and cols
     inputs.rows = numberOfTrainingData;
     inputs.cols = elementsPerLayer[0];
     t.rows = inputs.rows;
@@ -78,10 +71,10 @@ nn::nn(const std::string &filename) {
     // model situation when matrices are hosted by some native library that
     // uses OpenCL to accelerate calculations.
     
-    // Create buffers and copy host contents    
+    // Create buffers and copy host contents
     inputs.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
-    t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);      
+    t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     output1.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     output2.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
 
@@ -112,49 +105,50 @@ nn::~nn() {
  */
 
 
-matrix const & nn::FF_get_1st_matrix_for_product(cl_uint order) {
+matrix_cl_float & nn::FF_get_1st_matrix_for_product(cl_int order) {
     if (order == 0) {
         return inputs;
     } else {
         if (order % 2) {
-            return outputs1.set(numberOfTrainingData, elementsPerLayer[order]);
+            return output1.set(numberOfTrainingData, elementsPerLayer[order]);
         } else {
-            return outputs2.set(numberOfTrainingData, elementsPerLayer[order]);
+            return output2.set(numberOfTrainingData, elementsPerLayer[order]);
         }
     }
 }
 
-matrix_type const & nn::FF_get_2nd_matrix_for_product(cl_uint order) {
+matrix_cl_float & nn::FF_get_2nd_matrix_for_product(cl_int order) {
 
     // calculate distance from origin of the weight matrix
     cl_uint offset = 0;
-    for (cl_uint i = 0; i < order; i++)
+    for (cl_int i = 0; i < order; i++)
         offset += elementsPerLayer[i]*elementsPerLayer[i+1];
 
-    return weights.set(elementsPerLayer[order], 
-                       elementsPerLayer[order+1], 
+    return weights.set(elementsPerLayer[order],
+                       elementsPerLayer[order+1],
                        offset);
 }
 
 
-matrix_type nn::FF_get_result_matrix_for_product(cl_uint order) {
-    matrix & result = output(order);
-    return result.set(numberOfTrainingData, 
-                      elementsPerLayer[order+1]);
+matrix_cl_float & nn::FF_get_result_matrix_for_product(cl_int order) {
+    // set y to the correct buffer (output1 or output2)
+    y = output(order);
+    return y.set(numberOfTrainingData,
+                 elementsPerLayer[order+1]);
 }
 
 std::vector<cl_float> & nn::FF() {
     const cl_uint N = get_number_of_product_matrices();
     
     for ( cl_uint i = 0; i < N; i++ ) {
-        matrix & A = FF_get_1st_matrix_for_product(i);
-        matrix & B = FF_get_2nd_matrix_for_product(i);
-        matrix & C = FF_get_result_matrix_for_product(i);
+        matrix_cl_float & A = FF_get_1st_matrix_for_product(i);
+        matrix_cl_float & B = FF_get_2nd_matrix_for_product(i);
+        matrix_cl_float & C = FF_get_result_matrix_for_product(i);
         matmult->run(A, B, C);
     }
 
 
-    matrix &result = output(N-1);
+    matrix_cl_float &result = output(N-1);
     
     // transferimos los datos finales calculados de device a host
     result.readFromDevice(*queue);
@@ -164,5 +158,5 @@ std::vector<cl_float> & nn::FF() {
     
     print_vector(result.hostData, 8);
 
-    return result;
+    return result.hostData;
 }

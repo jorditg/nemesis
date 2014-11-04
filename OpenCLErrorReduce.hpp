@@ -6,11 +6,12 @@
  */
 
 #ifndef ERRORREDUCE_HPP
-#define	ERRORREDUCE_HPP
+#define ERRORREDUCE_HPP
 
 #define __CL_ENABLE_EXCEPTIONS  // enable use of exceptions of the OpenCL API
 
 #include <string>
+#include <vector>
 #include <fstream>
 
 #include "CL/cl.hpp"
@@ -19,19 +20,20 @@
 
 
 class OpenCLErrorReduce {
-public:
+ public:
     inline OpenCLErrorReduce(
-                            const cl::Context & c, 
+                            const cl::Context & c,
                             const std::vector<cl::Device> & d,
                             const cl::CommandQueue & q,
-                            matrix const & Y,
-                            matrix const & T) 
+                            matrix_cl_float const & Y,
+                            matrix_cl_float const & T)
                             : context(c), devices(d), queue(q), y(Y), t(T) {
         opencl_initialize();
     };
     virtual ~OpenCLErrorReduce();
     cl_float run();
-private:
+  
+ private:
     const cl::Context & context;
     const std::vector<cl::Device> & devices;
     const cl::CommandQueue & queue;
@@ -39,12 +41,12 @@ private:
     size_t global_size[1];
     size_t local_size[1];
     
-    matrix const & y;
-    matrix const & t;
+    matrix_cl_float const & y;
+    matrix_cl_float const & t;
     
-    matrix error;
+    matrix_cl_float error;
     
-    cl::Program *program;    
+    cl::Program *program;
     cl::Kernel *kernel;
     bool lds;
     
@@ -60,5 +62,5 @@ private:
 
 };
 
-#endif	/* MATRIXMULTIPLICATION_HPP */
+#endif  /* MATRIXMULTIPLICATION_HPP */
 

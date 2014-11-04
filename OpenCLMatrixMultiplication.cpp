@@ -28,22 +28,21 @@ void OpenCLMatrixMultiplication::opencl_select_kernel() {
     // don't need to specify length as we used a null terminated string
 
     // create the OpenCL program
-    program = new cl::Program(context, sources);  
+    program = new cl::Program(context, sources);
     
     try {
         program->build(devices);
-    } 
-    catch (const cl::Error &e) {  
+    } catch (const cl::Error &e) {
         // get compilation log in case of failure
-        std::cout << "Build Status: " 
-                  << program->getBuildInfo<CL_PROGRAM_BUILD_STATUS>(devices[device_id]) 
-                  << std::endl;
-        std::cout << "Build Options:\t" 
-                  << program->getBuildInfo<CL_PROGRAM_BUILD_OPTIONS>(devices[device_id]) 
-                  << std::endl;
-        std::cout << "Build Log:\t " 
-                  << program->getBuildInfo<CL_PROGRAM_BUILD_LOG>(devices[device_id]) 
-                  << std::endl;
+     std::cout << "Build Status: "
+        << program->getBuildInfo<CL_PROGRAM_BUILD_STATUS>(devices[device_id])
+        << std::endl;
+     std::cout << "Build Options:\t"
+        << program->getBuildInfo<CL_PROGRAM_BUILD_OPTIONS>(devices[device_id])
+        << std::endl;
+     std::cout << "Build Log:\t "
+        << program->getBuildInfo<CL_PROGRAM_BUILD_LOG>(devices[device_id])
+        << std::endl;
     }
     
     if (devices[device_id].getInfo<CL_DEVICE_LOCAL_MEM_SIZE>() > 1024) {
@@ -59,9 +58,9 @@ void OpenCLMatrixMultiplication::opencl_select_kernel() {
     }
 }
 
-void OpenCLMatrixMultiplication::run_mmmKernel_local(matrix const &A,
-                                               matrix const &B,
-                                               matrix const &result) {
+void OpenCLMatrixMultiplication::run_mmmKernel_local(matrix_cl_float const &A,
+                                               matrix_cl_float const &B,
+                                               matrix_cl_float const &result) {
     
     const size_t global_size[2] = {size_t(result.cols/4),
                                    size_t(result.rows/4)};
@@ -79,11 +78,11 @@ void OpenCLMatrixMultiplication::run_mmmKernel_local(matrix const &A,
     // -----------------------------------------------------------------------
     // Setting kernel arguments
     // -----------------------------------------------------------------------    
-    kernel->setArg(0, A->deviceData);
-    kernel->setArg(1, B->deviceData);
-    kernel->setArg(2, result->deviceData);
+    kernel->setArg(0, A.deviceData);
+    kernel->setArg(1, B.deviceData);
+    kernel->setArg(2, result.deviceData);
     kernel->setArg(3, A.cols);
-    kernel->setArg(4, B.offset);        
+    kernel->setArg(4, B.offset);
     kernel->setArg(5, cl::__local((blockSize*4)*(blockSize*4)*sizeof(cl_float)));
 
     // -----------------------------------------------------------------------
@@ -109,9 +108,9 @@ void OpenCLMatrixMultiplication::run_mmmKernel_local(matrix const &A,
     std::cout << "Matmult finished\n";
 }
 
-void OpenCLMatrixMultiplication::run_mmmKernel(matrix const &A,
-                                         matrix const &B,
-                                         matrix const &result) {
+void OpenCLMatrixMultiplication::run_mmmKernel(matrix_cl_float const &A,
+                                         matrix_cl_float const &B,
+                                         matrix_cl_float const &result) {
     const size_t blockSize = 8;
     
     const size_t global_size[2] = {size_t(result.cols/4),
@@ -123,9 +122,9 @@ void OpenCLMatrixMultiplication::run_mmmKernel(matrix const &A,
     // -----------------------------------------------------------------------
     // Setting kernel arguments
     // -----------------------------------------------------------------------
-    kernel->setArg(0, A->deviceData);
-    kernel->setArg(1, B->deviceData);
-    kernel->setArg(2, result->deviceData);
+    kernel->setArg(0, A.deviceData);
+    kernel->setArg(1, B.deviceData);
+    kernel->setArg(2, result.deviceData);
     kernel->setArg(3, A.cols);
     kernel->setArg(4, B.cols);
     kernel->setArg(5, B.offset);
@@ -153,9 +152,9 @@ void OpenCLMatrixMultiplication::run_mmmKernel(matrix const &A,
     std::cout << "Matmult finished\n";
 }
 
-void OpenCLMatrixMultiplication::run(matrix const &A,
-                               matrix const &B,
-                               matrix const &result) {
+void OpenCLMatrixMultiplication::run(matrix_cl_float const &A,
+                               matrix_cl_float const &B,
+                               matrix_cl_float const &result) {
     if (lds) {
         run_mmmKernel_local(A, B, result);
     } else {

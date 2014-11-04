@@ -31,9 +31,9 @@ class OpenCLMatrixMultiplication {
     };
 
     virtual ~OpenCLMatrixMultiplication();
-    void run(matrix const &A,
-             matrix const &B,
-             matrix const &result);
+    void run(matrix_cl_float const &A,
+             matrix_cl_float const &B,
+             matrix_cl_float const &result);
   
  private:
     const cl::Context & context;
@@ -53,12 +53,12 @@ class OpenCLMatrixMultiplication {
     
     void opencl_select_kernel();
     
-    void run_mmmKernel_local(matrix const &A,
-                             matrix const &B,
-                             matrix const &result);
-    void run_mmmKernel(matrix const &A,
-                       matrix const &B,
-                       matrix const &result);
+    void run_mmmKernel_local(matrix_cl_float const &A,
+                             matrix_cl_float const &B,
+                             matrix_cl_float const &result);
+    void run_mmmKernel(matrix_cl_float const &A,
+                       matrix_cl_float const &B,
+                       matrix_cl_float const &result);
 };
 
 #endif  /* MATRIXMULTIPLICATION_HPP */
