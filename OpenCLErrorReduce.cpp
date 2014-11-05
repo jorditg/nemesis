@@ -20,7 +20,7 @@ OpenCLErrorReduce::~OpenCLErrorReduce() {
 }
 
 void OpenCLErrorReduce::opencl_initialize() {
-    assert(t.rows == y.rows && t.cols == y.cols);
+    //assert(t.rows == y.rows && t.cols == y.cols);
     
     const size_t blockSize = 4096;  // float4's
     const size_t data_size_float4_global = y.rows*y.cols/4;

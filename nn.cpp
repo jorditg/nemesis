@@ -78,13 +78,17 @@ nn::nn(const std::string &filename) {
     output1.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     output2.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
 
+    inputs.writeToDevice(*queue);
+    weights.writeToDevice(*queue);
+    t.writeToDevice(*queue);
+    
     // instantitate kernels
     matmult = new OpenCLMatrixMultiplication(*context, devices, 0, *queue);
-    ce = new OpenCLErrorReduce(*context, devices, *queue, y, t);
+    // ce = new OpenCLErrorReduce(*context, devices, *queue, y, t);
 };
 
 nn::~nn() {
-    delete ce;
+  //    delete ce;
     delete matmult;
     delete queue;
     delete context;
@@ -133,7 +137,7 @@ matrix_cl_float & nn::FF_get_2nd_matrix_for_product(cl_int order) {
 matrix_cl_float & nn::FF_get_result_matrix_for_product(cl_int order) {
     // set y to the correct buffer (output1 or output2)
     y = output(order);
-    return y.set(numberOfTrainingData,
+    return y->set(numberOfTrainingData,
                  elementsPerLayer[order+1]);
 }
 
@@ -145,18 +149,20 @@ std::vector<cl_float> & nn::FF() {
         matrix_cl_float & B = FF_get_2nd_matrix_for_product(i);
         matrix_cl_float & C = FF_get_result_matrix_for_product(i);
         matmult->run(A, B, C);
+        //C.readFromDevice(*queue);
+        //continue;
     }
 
 
-    matrix_cl_float &result = output(N-1);
+    matrix_cl_float *result = output(N-1);
     
     // transferimos los datos finales calculados de device a host
-    result.readFromDevice(*queue);
+    result->readFromDevice(*queue);
     
     // devolvemos referencia a vector output en host que contiene
     // los resultados finales
     
-    print_vector(result.hostData, 8);
+    print_vector(result->hostData, result->rows, result->cols);
 
-    return result.hostData;
+    return result->hostData;
 }

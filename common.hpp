@@ -36,20 +36,20 @@ struct matrix {
   }
   
   inline void readFromDevice(const cl::CommandQueue & queue) {
-      queue.enqueueMapBuffer(*deviceData,
-                             CL_TRUE,
-                             CL_MAP_READ,
-                             0,
-                             hostData.size());
+      queue.enqueueReadBuffer(*deviceData,
+                              CL_TRUE,
+                              0,
+                              hostData.size()*sizeof(cl_float),
+                              &hostData[0]);
       queue.finish();
   }
 
   inline void writeToDevice(cl::CommandQueue & queue) {
-      queue.enqueueMapBuffer(*deviceData,
-                             CL_TRUE,
-                             CL_MAP_WRITE,
-                             0,
-                             hostData.size());
+      queue.enqueueWriteBuffer(*deviceData,
+                               CL_TRUE, 
+                               0,
+                               hostData.size()*sizeof(cl_float),
+                               &hostData[0]);
       queue.finish();
   }
   
@@ -68,12 +68,7 @@ struct matrix {
 
 typedef matrix<cl_float> matrix_cl_float;
 
-inline void print_vector(const std::vector<cl_float> &v, int cols) {
-  for (size_t i = 0; i < v.size(); i++) {
-    std::cout << boost::format("%5.5f") % v[i] << " ";
-    if (!((i+1) % cols)) std::cout << std::endl;
-  }
-}
+void print_vector(const std::vector<cl_float> &v, int rows, int cols);
 
 void load_csv_data(const std::string & filename,
                    std::vector<cl_float> & input,

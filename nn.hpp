@@ -26,8 +26,8 @@ class nn {
     matrix_cl_float output1;  // buffer for calculations 1
     matrix_cl_float output2;  // buffer for calculations 2
 
-    matrix_cl_float &y = output1;  // can point to output1 or output2 depending
-                                   // on which the last buffer call is
+    matrix_cl_float *y = &output1;  // can point to output1 or output2 depending
+                                    // on which the last buffer call is
   
 
     cl::Context *context;   // unique OpenCL context
@@ -47,8 +47,8 @@ class nn {
     matrix_cl_float & FF_get_2nd_matrix_for_product(cl_int order);
     matrix_cl_float & FF_get_result_matrix_for_product(cl_int order);
 
-    inline matrix_cl_float & output(cl_int order) {
-        return (order%2)?output2:output1;
+    inline matrix_cl_float * output(cl_int order) {
+        return (order%2)?&output2:&output1;
     };
     
     public:

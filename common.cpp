@@ -98,3 +98,14 @@ void load_csv_vector(const std::string & filename,
 }
 
 
+void print_vector(const std::vector<cl_float> &v, int rows, int cols) {
+    int lines = 0;
+  for (size_t i = 0; i < v.size(); i++) {
+    std::cout << boost::format("%5.5f") % v[i] << " ";
+    if (!((i+1) % cols)) {
+        std::cout << std::endl;
+        lines++;
+    }
+    if (lines == rows ) break;
+  }
+}
