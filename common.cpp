@@ -30,15 +30,17 @@ void load_csv_data(const std::string & filename,
     layers = 0;
     for (std::vector<std::string>::iterator it = vec.begin() ;
          it != vec.end(); ++it) {
-        elements.push_back(std::stoi(*it));
+        elements.push_back(std::stoi(*it) + 1 /* bias element */ );
         layers++;
     }
+    elements[elements.size()-1]--;  // output elements doesn't have bias
 
     const cl_int cols = elements[0] + elements[elements.size()-1];
-    // cols to read = number of inputs + number of outputs
+    // cols to read = number of inputs + 1 (bias) + number of outputs
 
     cl_int n = 0;
     while (getline(in, line)) {
+        line = "1," + line;     // Insert the bias element not present in file
         Tokenizer tok(line);
         vec.assign(tok.begin(), tok.end());
         // vector now contains strings from one row, output to cout here
@@ -98,9 +100,12 @@ void load_csv_vector(const std::string & filename,
 }
 
 
-void print_vector(const std::vector<cl_float> &v, int rows, int cols) {
-    int lines = 0;
-  for (size_t i = 0; i < v.size(); i++) {
+void print_vector(const std::vector<cl_float> &v, 
+                  int rows, 
+                  int cols, 
+                  int offset = 0) {
+  int lines = 0;
+  for (size_t i = offset; i < v.size(); i++) {
     std::cout << boost::format("%5.5f") % v[i] << " ";
     if (!((i+1) % cols)) {
         std::cout << std::endl;

@@ -18,15 +18,12 @@
 #include <iostream>
 
 template<typename T>
-struct matrix {
-  std::vector<T> hostData;
+struct host_device_memory_map {
+  std::vector<T> & hostData;
   cl::Buffer * deviceData;
-  cl_int rows;
-  cl_int cols;
-  cl_int offset;    // offset where data begins
   
-  inline matrix() : rows(0), cols(0), offset(0) {}
-  
+  inline host_device_memory_map(std::vector<T> & v) : hostData(v) {}
+
   inline void createBuffer(const cl::Context & context,
                            const cl_mem_flags flags) {
     deviceData = new cl::Buffer(context,
@@ -53,28 +50,40 @@ struct matrix {
       queue.finish();
   }
   
-  inline matrix & set(cl_int r, cl_int c, cl_int o = 0) {
-      rows = r;
-      cols = c;
-      offset = o;
-
-      return *this;
-  }
-
-  inline ~matrix() {
+  inline ~host_device_memory_map() {
       if (deviceData) delete deviceData;
   }
 };
 
 typedef matrix<cl_float> matrix_cl_float;
 
-void print_vector(const std::vector<cl_float> &v, int rows, int cols);
+template<typename T>
+struct matrix {
+    host_device_memory_map<T> const &data;
+    cl_uint rows;
+    cl_uint cols;
+    cl_uint offset;
+    
+    matrix(host_device_memory_map const &d) 
+            : data(d), rows(0), cols(0), offset(0) {}
+    
+    inline matrix const & set (cl_uint r, cl_uint c, cl_uint o = 0) {
+        rows = r;
+        cols = c;
+        offset = o;
+        return *this;
+    }
+};
+
+void print_vector(const std::vector<cl_float> &v, 
+                  int rows, 
+                  int cols, 
+                  int offset = 0);
 
 void load_csv_data(const std::string & filename,
                    std::vector<cl_float> & input,
                    std::vector<cl_float> & output,
                    cl_int &rows,
-                   cl_int &layers,
                    std::vector<cl_int> &elements);
 
 void load_csv_vector(const std::string & filename,

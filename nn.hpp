@@ -14,21 +14,21 @@
 #include "OpenCLErrorReduce.hpp"
 
 class nn {
-
+    cl_int numberOfElements;
     cl_int numberOfTrainingData;
     cl_int numberOfLayers;
 
     std::vector<cl_int> elementsPerLayer;
-
-    matrix_cl_float inputs;   // data input
-    matrix_cl_float weights;  // all the weights of the NN
-    matrix_cl_float t;        // real output value
-    matrix_cl_float output1;  // buffer for calculations 1
-    matrix_cl_float output2;  // buffer for calculations 2
-
-    matrix_cl_float *y = &output1;  // can point to output1 or output2 depending
-                                    // on which the last buffer call is
-  
+    
+    std::vector<cl_float> activations_host;
+    std::vector<cl_float> weights_host;
+    std::vector<cl_float> deltas_host;
+    std::vector<cl_float> t_host;
+    
+    host_device_memory_map activations; // inputs and calculated activations
+    host_device_memory_map weights;  // all the weights of the NN
+    host_device_memory_map deltas;   // delta errors (Backprop)
+    host_device_memory_map t;        // real output value
 
     cl::Context *context;   // unique OpenCL context
     std::vector<cl::Device> devices;
@@ -41,16 +41,10 @@ class nn {
     void opencl_cleanup();
 
     // FeedForward calculation matrices
-    inline cl_int get_number_of_product_matrices()
-                        { return numberOfLayers-1; }
     matrix_cl_float & FF_get_1st_matrix_for_product(cl_int order);
     matrix_cl_float & FF_get_2nd_matrix_for_product(cl_int order);
     matrix_cl_float & FF_get_result_matrix_for_product(cl_int order);
 
-    inline matrix_cl_float * output(cl_int order) {
-        return (order%2)?&output2:&output1;
-    };
-    
     public:
     explicit nn(const std::string &filename);
     ~nn();

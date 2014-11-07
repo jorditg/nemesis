@@ -28,7 +28,12 @@ void nn::populate_fixed_weights() {
     *it = 0.00005;
 }
 
-nn::nn(const std::string &filename) {
+nn::nn(const std::string &filename) : activations(activations_host),
+                                      weights(weights_host), 
+                                      deltas(deltas_host),
+                                      t(t_host),
+                                      y(activations_host) {
+    
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);  // get available OpenCL platforms
     
@@ -42,29 +47,25 @@ nn::nn(const std::string &filename) {
     queue = new cl::CommandQueue(*context, devices[0]);
 
     // load input data into host memory
-    load_csv_data(filename, inputs.hostData, t.hostData, numberOfTrainingData,
-                  numberOfLayers, elementsPerLayer);
+    load_csv_data(filename, 
+                  activations.hostData, 
+                  t.hostData, 
+                  numberOfTrainingData,
+                  numberOfLayers, 
+                  elementsPerLayer);
+       
+    // host memory allocation for neural network
+    numberOfElements = 0;
+    for ( int i = 0; i < numberOfLayers-1; i++ ) {
+        numberOfElements += (elementsPerLayer[i])*elementsPerLayer[i+1];
+    }
     
-    // initialize rows and cols
-    inputs.rows = numberOfTrainingData;
-    inputs.cols = elementsPerLayer[0];
-    t.rows = inputs.rows;
-    t.cols = elementsPerLayer[elementsPerLayer.size()-1];
-    
-    // host memory allocation for neural network weights
-    cl_uint numberOfWeights = 0;
-    for ( cl_int i = 0; i < numberOfLayers-1; i++ )
-        numberOfWeights += elementsPerLayer[i]*elementsPerLayer[i+1];
-    weights.hostData.resize(numberOfWeights);
+    activations.hostData.resize(numberOfElements);
+    weights.hostData.resize(numberOfElements);
+    deltas.hostData.resize(numberOfElements);
 
     load_csv_vector("weights.txt", weights.hostData);
     
-    // outputs buffer
-    cl_uint maxLayerNeurons = *std::max_element(std::begin(elementsPerLayer)+1,
-                                               std::end(elementsPerLayer));
-    output1.hostData.resize(maxLayerNeurons*numberOfTrainingData);
-    output2.hostData.resize(maxLayerNeurons*numberOfTrainingData);
-
     // device memory allocation
     // Create OpenCL buffers for the matrices based on allocated memory regions
     // Create buffers with CL_MEM_USE_HOST_PTR to minimize copying and
@@ -72,13 +73,12 @@ nn::nn(const std::string &filename) {
     // uses OpenCL to accelerate calculations.
     
     // Create buffers and copy host contents
-    inputs.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
+    activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
+    deltas.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
-    output1.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
-    output2.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
 
-    inputs.writeToDevice(*queue);
+    activations.writeToDevice(*queue);
     weights.writeToDevice(*queue);
     t.writeToDevice(*queue);
     
@@ -109,60 +109,38 @@ nn::~nn() {
  */
 
 
-matrix_cl_float & nn::FF_get_1st_matrix_for_product(cl_int order) {
-    if (order == 0) {
-        return inputs;
-    } else {
-        if (order % 2) {
-            return output1.set(numberOfTrainingData, elementsPerLayer[order]);
-        } else {
-            return output2.set(numberOfTrainingData, elementsPerLayer[order]);
-        }
-    }
-}
-
-matrix_cl_float & nn::FF_get_2nd_matrix_for_product(cl_int order) {
-
-    // calculate distance from origin of the weight matrix
-    cl_uint offset = 0;
-    for (cl_int i = 0; i < order; i++)
-        offset += elementsPerLayer[i]*elementsPerLayer[i+1];
-
-    return weights.set(elementsPerLayer[order],
-                       elementsPerLayer[order+1],
-                       offset);
-}
-
-
-matrix_cl_float & nn::FF_get_result_matrix_for_product(cl_int order) {
-    // set y to the correct buffer (output1 or output2)
-    y = output(order);
-    return y->set(numberOfTrainingData,
-                 elementsPerLayer[order+1]);
-}
-
-std::vector<cl_float> & nn::FF() {
-    const cl_uint N = get_number_of_product_matrices();
+void nn::FF() {
+    const cl_int N = numberOfLayers - 1;
     
-    for ( cl_uint i = 0; i < N; i++ ) {
-        matrix_cl_float & A = FF_get_1st_matrix_for_product(i);
-        matrix_cl_float & B = FF_get_2nd_matrix_for_product(i);
-        matrix_cl_float & C = FF_get_result_matrix_for_product(i);
+    matrix<cl_float> & A(activations);
+    matrix<cl_float> & B(weights);
+    matrix<cl_float> & C(activations);
+    
+    A.offset = 0;
+    A.rows = numberOfTrainingData;
+    B.offset = 0;
+    C.offset = elementsPerLayer[0]*elementsPerLayer[1];
+    for ( cl_int i = 0; i < N; i++ ) {
+        A.cols = elementsPerLayer[i];
+        B.rows = A.cols;
+        B.cols = elementsPerLayer[i+1];
+        C.rows = A.cols;
+        C.cols = B.cols;
         matmult->run(A, B, C);
         //C.readFromDevice(*queue);
         //continue;
+        
+        A.offset = C.offset;
+        C.offset += elementsPerLayer[i+1]*numberOfTrainingData;        
+        B.offset += elementsPerLayer[i]*elementsPerLayer[i+1];
     }
 
 
-    matrix_cl_float *result = output(N-1);
-    
-    // transferimos los datos finales calculados de device a host
-    result->readFromDevice(*queue);
+ 
+    C.data.readFromDevice(*queue);  // copy calculatied activations back to host
     
     // devolvemos referencia a vector output en host que contiene
     // los resultados finales
     
-    print_vector(result->hostData, result->rows, result->cols);
-
-    return result->hostData;
+    print_vector(C.data.hostData, C.rows, C.cols, C.offset);
 }

@@ -28,7 +28,9 @@ __kernel void mmmKernel(__global float4 *matrixA,
                         __global float4 *matrixC,
                         int widthA,
                         int widthB, 
-                        int offsetB)
+                        int offsetA,
+                        int offsetB,
+                        int offsetC)
 {
     // offsetB is the offset from begining where the matrix of weights begin
     
@@ -46,10 +48,10 @@ __kernel void mmmKernel(__global float4 *matrixA,
 
     for(int i = 0; i < widthA; i=i+4)
     {
-        float4 tempA0 = matrixA[i/4 + (pos.y << TILEY_SHIFT) * (widthA / 4)];
-        float4 tempA1 = matrixA[i/4 + ((pos.y << TILEY_SHIFT) + 1) * (widthA / 4)];
-        float4 tempA2 = matrixA[i/4 + ((pos.y << TILEY_SHIFT) + 2) * (widthA / 4)];
-        float4 tempA3 = matrixA[i/4 + ((pos.y << TILEY_SHIFT) + 3) * (widthA / 4)];
+        float4 tempA0 = matrixA[offsetA + i/4 + (pos.y << TILEY_SHIFT) * (widthA / 4)];
+        float4 tempA1 = matrixA[offsetA + i/4 + ((pos.y << TILEY_SHIFT) + 1) * (widthA / 4)];
+        float4 tempA2 = matrixA[offsetA + i/4 + ((pos.y << TILEY_SHIFT) + 2) * (widthA / 4)];
+        float4 tempA3 = matrixA[offsetA + i/4 + ((pos.y << TILEY_SHIFT) + 3) * (widthA / 4)];
 
         //Matrix B is not transposed 
         float4 tempB0 = matrixB[offsetB + pos.x + i * widthB];	
@@ -88,10 +90,10 @@ __kernel void mmmKernel(__global float4 *matrixA,
     // end of calculation of sigmoid function
     
     
-    matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 0) * widthB] = sum0;
-    matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 1) * widthB] = sum1;
-    matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 2) * widthB] = sum2;
-    matrixC[pos.x + ((pos.y <<  TILEY_SHIFT) + 3) * widthB] = sum3;
+    matrixC[offsetC + pos.x + ((pos.y <<  TILEY_SHIFT) + 0) * widthB] = sum0;
+    matrixC[offsetC + pos.x + ((pos.y <<  TILEY_SHIFT) + 1) * widthB] = sum1;
+    matrixC[offsetC + pos.x + ((pos.y <<  TILEY_SHIFT) + 2) * widthB] = sum2;
+    matrixC[offsetC + pos.x + ((pos.y <<  TILEY_SHIFT) + 3) * widthB] = sum3;
  }
 
 
@@ -101,13 +103,15 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
                               __global float4 *matrixB,
                               __global float4* matrixC,
                               int widthA,
+                              int offsetA,
                               int offsetB,
+                              int offsetC,
                               __local float4 *blockA)
 {
     int blockPos = get_local_id(0) + get_local_size(0) * (get_local_id(1) << TILEY_SHIFT); //Should be : localId * (TILEX / 4) (float4)
     
     /* Position of thread will be according to the number of values it writes i.e TILE size */
-    int globalPos =  get_global_id(0) + (get_global_id(1) << TILEY_SHIFT) * get_global_size(0);
+    int globalPos =  offsetC + get_global_id(0) + (get_global_id(1) << TILEY_SHIFT) * get_global_size(0);
 
     /* Each thread writes 4 float4s */
     float4 sum0 = (float4)(0);
@@ -122,7 +126,7 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
     for(int i = 0; i < (temp / get_local_size(0)); i++)
     {
         /* Calculate global ids of threads from the particular block to load from matrix A depending on i */
-        int globalPosA = i * get_local_size(0) + get_local_id(0) + (get_global_id(1) << TILEY_SHIFT) * temp;
+        int globalPosA = offsetA + i * get_local_size(0) + get_local_id(0) + (get_global_id(1) << TILEY_SHIFT) * temp;
 
         /* Load values in blockA from matrixA */
         blockA[blockPos] = matrixA[globalPosA];

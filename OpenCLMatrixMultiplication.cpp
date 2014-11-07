@@ -61,11 +61,11 @@ void OpenCLMatrixMultiplication::opencl_select_kernel() {
 void OpenCLMatrixMultiplication::
      run_mmmKernel_local(matrix_cl_float const &A,
                          matrix_cl_float const &B,
-                         matrix_cl_float const &result) {
+                         matrix_cl_float const &C) {
 
     // It's correct, cols and rows are in this order
-    const size_t global_size[2] = {size_t(result.cols/4),
-                                   size_t(result.rows/4)};
+    const size_t global_size[2] = {size_t(C.cols/4),
+                                   size_t(C.rows/4)};
     
     // Proposed block size = 8
     size_t blockSize_r = 8, blockSize_c = 8;
@@ -82,12 +82,14 @@ void OpenCLMatrixMultiplication::
     // -----------------------------------------------------------------------
     // Setting kernel arguments
     // -----------------------------------------------------------------------    
-    kernel->setArg(0, *(A.deviceData));
-    kernel->setArg(1, *(B.deviceData));
-    kernel->setArg(2, *(result.deviceData));
+    kernel->setArg(0, *(A.data.deviceData));
+    kernel->setArg(1, *(B.data.deviceData));
+    kernel->setArg(2, *(C.data.deviceData));
     kernel->setArg(3, A.cols);
-    kernel->setArg(4, B.offset);
-    kernel->setArg(5, cl::__local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
+    kernel->setArg(4, A.offset);
+    kernel->setArg(5, B.offset);
+    kernel->setArg(6, C.offset);
+    kernel->setArg(7, cl::__local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
@@ -115,11 +117,11 @@ void OpenCLMatrixMultiplication::
 void OpenCLMatrixMultiplication::
      run_mmmKernel(matrix_cl_float const &A,
                    matrix_cl_float const &B,
-                   matrix_cl_float const &result) {
+                   matrix_cl_float const &C) {
     const size_t blockSize_r = 8, blockSize_c = 8;
     
-    const size_t global_size[2] = {size_t(result.cols/4),
-                                   size_t(result.rows/4)};
+    const size_t global_size[2] = {size_t(C.cols/4),
+                                   size_t(C.rows/4)};
     // float4 elements in kernel
 
     const size_t local_size[2] = {blockSize_c, blockSize_r};
@@ -127,13 +129,15 @@ void OpenCLMatrixMultiplication::
     // -----------------------------------------------------------------------
     // Setting kernel arguments
     // -----------------------------------------------------------------------
-    kernel->setArg(0, *(A.deviceData));
-    kernel->setArg(1, *(B.deviceData));
-    kernel->setArg(2, *(result.deviceData));
+    kernel->setArg(0, *(A.data.deviceData));
+    kernel->setArg(1, *(B.data.deviceData));
+    kernel->setArg(2, *(C.data.deviceData));
     kernel->setArg(3, A.cols);
     kernel->setArg(4, B.cols);
-    kernel->setArg(5, B.offset);
-
+    kernel->setArg(5, A.offset);
+    kernel->setArg(6, B.offset);
+    kernel->setArg(7, C.offset);
+    
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
     // parameters obtained from user.
@@ -157,13 +161,13 @@ void OpenCLMatrixMultiplication::
     std::cout << "Matmult finished\n";
 }
 
-void OpenCLMatrixMultiplication::run(matrix_cl_float const &A,
-                                     matrix_cl_float const &B,
-                                     matrix_cl_float const &result) {
+    void run(matrix_cl_float const &A,              
+             matrix_cl_float const &B,
+             matrix_cl_float const &C) {
     if (lds) {
-        run_mmmKernel_local(A, B, result);
+        run_mmmKernel_local(A, B, C);
     } else {
-        run_mmmKernel(A, B, result);
+        run_mmmKernel(A, B, C);
     }
 }
 
