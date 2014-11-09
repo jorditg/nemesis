@@ -21,15 +21,15 @@
 
 class OpenCLErrorReduce {
  public:
-    inline OpenCLErrorReduce(
-                            const cl::Context & c,
-                            const std::vector<cl::Device> & d,
-                            const cl::CommandQueue & q,
-                            matrix_cl_float const & Y,
-                            matrix_cl_float const & T)
-                            : context(c), devices(d), queue(q), y(Y), t(T) {
+    inline OpenCLErrorReduce(const cl::Context & c,
+                             const std::vector<cl::Device> & d,
+                             const cl::CommandQueue & q,
+                             matrix_cl_float const & Y,
+                             matrix_cl_float const & T) : 
+                             context(c), devices(d), queue(q), y(Y), t(T) {
         opencl_initialize();
     };
+                             
     virtual ~OpenCLErrorReduce();
     cl_float run();
   
@@ -41,8 +41,8 @@ class OpenCLErrorReduce {
     size_t global_size[1];
     size_t local_size[1];
     
-    matrix_cl_float const & y;
-    matrix_cl_float const & t;
+    matrix_cl_float & y;
+    matrix_cl_float & t;
     
     matrix_cl_float error;
     

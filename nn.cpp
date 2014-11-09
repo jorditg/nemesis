@@ -31,8 +31,7 @@ void nn::populate_fixed_weights() {
 nn::nn(const std::string &filename) : activations(activations_host),
                                       weights(weights_host), 
                                       deltas(deltas_host),
-                                      t(t_host),
-                                      y(activations_host) {
+                                      t(t_host) {
     
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);  // get available OpenCL platforms
@@ -60,9 +59,9 @@ nn::nn(const std::string &filename) : activations(activations_host),
         numberOfElements += (elementsPerLayer[i])*elementsPerLayer[i+1];
     }
     
-    activations.hostData.resize(numberOfElements);
+    activations.hostData.resize(numberOfElements*numberOfTrainingData);
     weights.hostData.resize(numberOfElements);
-    deltas.hostData.resize(numberOfElements);
+    deltas.hostData.resize(numberOfElements*numberOfTrainingData);
 
     load_csv_vector("weights.txt", weights.hostData);
     
@@ -112,30 +111,30 @@ nn::~nn() {
 void nn::FF() {
     const cl_int N = numberOfLayers - 1;
     
-    matrix<cl_float> & A(activations);
-    matrix<cl_float> & B(weights);
-    matrix<cl_float> & C(activations);
+    matrix_cl_float A(activations);
+    matrix_cl_float B(weights);
+    matrix_cl_float C(activations);
     
     A.offset = 0;
     A.rows = numberOfTrainingData;
     B.offset = 0;
-    C.offset = elementsPerLayer[0]*elementsPerLayer[1];
+    C.offset = elementsPerLayer[0]*numberOfTrainingData;
     for ( cl_int i = 0; i < N; i++ ) {
         A.cols = elementsPerLayer[i];
         B.rows = A.cols;
         B.cols = elementsPerLayer[i+1];
-        C.rows = A.cols;
+        C.rows = A.rows;
         C.cols = B.cols;
-        matmult->run(A, B, C);
-        //C.readFromDevice(*queue);
-        //continue;
+        matmult->run(A, B, C, ( i != ( N - 1 ) ) );
+        C.data.readFromDevice(*queue);
         
-        A.offset = C.offset;
-        C.offset += elementsPerLayer[i+1]*numberOfTrainingData;        
-        B.offset += elementsPerLayer[i]*elementsPerLayer[i+1];
+        print_vector(C.data.hostData, C.rows, C.cols, C.offset);
+        if (i < N-1) {
+            A.offset = C.offset;
+            C.offset += elementsPerLayer[i+1]*numberOfTrainingData;
+            B.offset += elementsPerLayer[i]*elementsPerLayer[i+1];
+        }
     }
-
-
  
     C.data.readFromDevice(*queue);  // copy calculatied activations back to host
     

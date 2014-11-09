@@ -11,7 +11,7 @@
 
 #include "common.hpp"
 #include "OpenCLMatrixMultiplication.hpp"
-#include "OpenCLErrorReduce.hpp"
+//#include "OpenCLErrorReduce.hpp"
 
 class nn {
     cl_int numberOfElements;
@@ -25,17 +25,17 @@ class nn {
     std::vector<cl_float> deltas_host;
     std::vector<cl_float> t_host;
     
-    host_device_memory_map activations; // inputs and calculated activations
-    host_device_memory_map weights;  // all the weights of the NN
-    host_device_memory_map deltas;   // delta errors (Backprop)
-    host_device_memory_map t;        // real output value
+    host_device_memory_map<cl_float> activations; // inputs and calculated activations
+    host_device_memory_map<cl_float> weights;  // all the weights of the NN
+    host_device_memory_map<cl_float> deltas;   // delta errors (Backprop)
+    host_device_memory_map<cl_float> t;        // real output value
 
     cl::Context *context;   // unique OpenCL context
     std::vector<cl::Device> devices;
     cl::CommandQueue *queue;   // unique OpenCL command queue;
 
     OpenCLMatrixMultiplication *matmult;
-    OpenCLErrorReduce *ce;
+    //OpenCLErrorReduce *ce;
 
     void opencl_device_memory_allocation();
     void opencl_cleanup();
@@ -46,13 +46,14 @@ class nn {
     matrix_cl_float & FF_get_result_matrix_for_product(cl_int order);
 
     public:
+    
     explicit nn(const std::string &filename);
     ~nn();
 
     void populate_random_weights(cl_float min, cl_float max);
     void populate_fixed_weights();
     
-    std::vector<cl_float> & FF();
+    void FF();
 };
 
 #endif

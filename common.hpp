@@ -23,6 +23,10 @@ struct host_device_memory_map {
   cl::Buffer * deviceData;
   
   inline host_device_memory_map(std::vector<T> & v) : hostData(v) {}
+  
+  inline host_device_memory_map(const host_device_memory_map<T> & orig) :
+                                hostData(orig.hostData), 
+                                deviceData(orig.deviceData) {}
 
   inline void createBuffer(const cl::Context & context,
                            const cl_mem_flags flags) {
@@ -41,7 +45,7 @@ struct host_device_memory_map {
       queue.finish();
   }
 
-  inline void writeToDevice(cl::CommandQueue & queue) {
+  inline void writeToDevice(const cl::CommandQueue & queue) {
       queue.enqueueWriteBuffer(*deviceData,
                                CL_TRUE, 
                                0,
@@ -55,19 +59,21 @@ struct host_device_memory_map {
   }
 };
 
-typedef matrix<cl_float> matrix_cl_float;
-
-template<typename T>
-struct matrix {
-    host_device_memory_map<T> const &data;
+template <typename T> 
+struct opencl_matrix {
+    host_device_memory_map<T> & data;
     cl_uint rows;
     cl_uint cols;
     cl_uint offset;
     
-    matrix(host_device_memory_map const &d) 
-            : data(d), rows(0), cols(0), offset(0) {}
+    inline opencl_matrix(host_device_memory_map<T> & d) : 
+                         data(d), rows(0), cols(0), offset(0) {}
     
-    inline matrix const & set (cl_uint r, cl_uint c, cl_uint o = 0) {
+    inline opencl_matrix(const opencl_matrix<T> & orig) : 
+                         data(orig.data), rows(orig.rows), 
+                         cols(orig.cols), offset(orig.offset) {}
+    
+    inline opencl_matrix const & set (cl_uint r, cl_uint c, cl_uint o = 0) {
         rows = r;
         cols = c;
         offset = o;
@@ -75,19 +81,22 @@ struct matrix {
     }
 };
 
-void print_vector(const std::vector<cl_float> &v, 
-                  int rows, 
-                  int cols, 
-                  int offset = 0);
+typedef opencl_matrix<cl_float> matrix_cl_float;
 
 void load_csv_data(const std::string & filename,
                    std::vector<cl_float> & input,
                    std::vector<cl_float> & output,
                    cl_int &rows,
+                   cl_int &layers,
                    std::vector<cl_int> &elements);
 
 void load_csv_vector(const std::string & filename,
                      std::vector<cl_float> &weights);
+
+void print_vector(const std::vector<cl_float> & v, 
+                  int rows, 
+                  int cols, 
+                  int offset);
 
 #endif  /* COMMON_HPP */
 

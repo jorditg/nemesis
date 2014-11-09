@@ -107,7 +107,7 @@ void print_vector(const std::vector<cl_float> &v,
   int lines = 0;
   for (size_t i = offset; i < v.size(); i++) {
     std::cout << boost::format("%5.5f") % v[i] << " ";
-    if (!((i+1) % cols)) {
+    if (!((i+1 - offset) % cols)) {
         std::cout << std::endl;
         lines++;
     }
