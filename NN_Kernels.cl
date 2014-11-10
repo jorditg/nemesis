@@ -20,9 +20,31 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #define TILEY 4
 #define TILEY_SHIFT 2
 
+
+float4 sigmoid(float4 x)
+{
+  return 1.0f / ( 1.0f + exp( -x ) ); 
+}
+
+float4 sigmoid_derivative(float4 sigmoid)
+{
+  return sigmoid*(sigmoid - 1.0f);
+}
+
+float4 cross_entropy(float4 y, float4 t)
+{
+  return ( t * ln(y) + (1.0f - t) * ln (1.0f - y) );
+}
+
+float4 cross_entropy_derivative(float4 y, float4 t)
+{
+  return ( ( t - y ) / ( y * (1.0f - y) ) );
+}
+
 /* Matrix A is cached into local memory block */
 /* Required global threads = (colsC / 4, rowsC / 4) */
-__kernel void mmmKernel_local(__global float4 *matrixA,
+__kernel void matrixMultiplicationSigmoidKernelLocal
+                             (__global float4 *matrixA,
                               __global float4 *matrixB,
                               __global float4* matrixC,
                               int widthA,
@@ -30,7 +52,8 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
                               int offsetB,
                               int offsetC,
                               __local float4 *blockA,
-                              int setBias)
+                              int setBias,
+                              int calcSigmoid)
 {
     int blockPos = get_local_id(0) + get_local_size(0) * (get_local_id(1) << TILEY_SHIFT); //Should be : localId * (TILEX / 4) (float4)
     
@@ -102,12 +125,15 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
     }
     
     // Calculate the sigmoid function of the sum
-    
-    sum0 = 1.0f/(1.0f+exp(-sum0));
-    sum1 = 1.0f/(1.0f+exp(-sum1));
-    sum2 = 1.0f/(1.0f+exp(-sum2));
-    sum3 = 1.0f/(1.0f+exp(-sum3));
+    if(calcSigmoid) {
+        sum0 = sigmoid(-sum0);
+        sum1 = sigmoid(-sum1);
+        sum2 = sigmoid(-sum2);
+        sum3 = sigmoid(-sum3);
+    }
 
+    // The first neuron of every layer exept the last one is the BIAS NEURON, that is to say that it always has a 1.0 output.
+    // setBias must be true for all the layers calculations except the last one (the output one).
     if(setBias && get_global_id(0) == 0) {
         sum0.x = 1.0f;
         sum1.x = 1.0f;
@@ -121,7 +147,56 @@ __kernel void mmmKernel_local(__global float4 *matrixA,
     matrixC[globalPos] = sum0;
     matrixC[globalPos +  get_global_size(0)] = sum1;
     matrixC[globalPos +  2 * get_global_size(0)] = sum2;
-    matrixC[globalPos +  3 * get_global_size(0)] = sum3;
-    
+    matrixC[globalPos +  3 * get_global_size(0)] = sum3;    
 }
 
+/* Substracts element by element. NDRange of one dimension. 
+ * Take care that every element is a float4 element.
+ * The dimension should be the total number of elements divided by 4
+ * This function is used to calculate the deltas of the output layer.
+ */
+__kernel void elementWiseSubstractKernel(__global float4 *t,
+                                         __global float4 *y,
+                                         __global float4* delta)
+{
+    int i = get_global_id(0);
+    delta[i] = t[i] - y[i];
+}
+
+__kernel void crossEntropyKernelLocal(__global float4* y, 
+                                      __global float4 t, 
+                                      __global float4* output, 
+                                      __local float4* sdata)
+{
+    // load shared mem
+    unsigned int tid = get_local_id(0);
+    unsigned int bid = get_group_id(0);
+    unsigned int gid = get_global_id(0);
+
+    unsigned int localSize = get_local_size(0);
+    unsigned int stride = gid * 2;
+    float4 y1 = y[stride];
+	float4 t1 = t[stride];
+	float4 i1 = cross_entropy(t1, y1);
+	float4 y2 = y[stride + 1];
+	float4 t2 = t[stride + 1]];
+	float4 i2 = cross_entropy(t2, y2);
+	sdata[tid] = i1 + i2;
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+    // do reduction in shared mem
+    for(unsigned int s = localSize >> 1; s > 0; s >>= 1) 
+    {
+        if(tid < s) 
+        {
+            sdata[tid] += sdata[tid + s];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    // write result for this block to global mem
+    if(tid == 0) output[bid] = - sdata[0];	// cross entropy is the negative sum
+}
+
+// Al finalizar la función se obtiene un vector de output de tamaño igual al número de grupos
+// que hay que sumar, obteniendo el resultado final

@@ -2,8 +2,8 @@ CC=g++
 CFLAGS=-g --std=c++11 -Wall
 LIBFLAGS=-lOpenCL
 
-HEADERS=nn.hpp OpenCLMatrixMultiplication.hpp common.hpp 
-SOURCES=main.cpp nn.cpp OpenCLMatrixMultiplication.cpp common.cpp 
+HEADERS=nn.hpp OpenCLKernels.hpp common.hpp 
+SOURCES=main.cpp nn.cpp OpenCLKernels.cpp common.cpp 
 EXECUTABLE=nn-opencl
 
 all: $(EXECUTABLE)

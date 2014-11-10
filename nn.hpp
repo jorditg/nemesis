@@ -10,7 +10,7 @@
 #include <string>
 
 #include "common.hpp"
-#include "OpenCLMatrixMultiplication.hpp"
+#include "OpenCLKernels.hpp"
 //#include "OpenCLErrorReduce.hpp"
 
 class nn {
@@ -34,7 +34,7 @@ class nn {
     std::vector<cl::Device> devices;
     cl::CommandQueue *queue;   // unique OpenCL command queue;
 
-    OpenCLMatrixMultiplication *matmult;
+    OpenCLKernels *matmult;
     //OpenCLErrorReduce *ce;
 
     void opencl_device_memory_allocation();
@@ -54,6 +54,7 @@ class nn {
     void populate_fixed_weights();
     
     void FF();
+    void BP();
 };
 
 #endif
