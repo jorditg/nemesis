@@ -41,7 +41,7 @@ class OpenCLKernels {
     void runElementWiseSubstract(
             matrix_cl_float const &t,              
             matrix_cl_float const &y,
-            matrix_cl_float const &e);    
+            matrix_cl_float &e);    
     
     cl_float runCrossEntropy(
             matrix_cl_float const &t, 
@@ -61,7 +61,7 @@ class OpenCLKernels {
     
     cl::Kernel *matrixMultiplicationSigmoidKernel;
     const std::string matrixMultiplicationSigmoidKernel_name = 
-                      "matrixMultiplicationSigmoidKernel_local";
+                      "matrixMultiplicationSigmoidKernelLocal";
     
     cl::Kernel *elementWiseSubstractKernel;
     const std::string elementWiseSubstractKernel_name =

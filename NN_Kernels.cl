@@ -33,7 +33,7 @@ float4 sigmoid_derivative(float4 sigmoid)
 
 float4 cross_entropy(float4 y, float4 t)
 {
-  return ( t * ln(y) + (1.0f - t) * ln (1.0f - y) );
+  return ( t * log(y) + (1.0f - t) * log (1.0f - y) );
 }
 
 float4 cross_entropy_derivative(float4 y, float4 t)
@@ -126,10 +126,10 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
     
     // Calculate the sigmoid function of the sum
     if(calcSigmoid) {
-        sum0 = sigmoid(-sum0);
-        sum1 = sigmoid(-sum1);
-        sum2 = sigmoid(-sum2);
-        sum3 = sigmoid(-sum3);
+        sum0 = sigmoid(sum0);
+        sum1 = sigmoid(sum1);
+        sum2 = sigmoid(sum2);
+        sum3 = sigmoid(sum3);
     }
 
     // The first neuron of every layer exept the last one is the BIAS NEURON, that is to say that it always has a 1.0 output.
@@ -164,7 +164,7 @@ __kernel void elementWiseSubstractKernel(__global float4 *t,
 }
 
 __kernel void crossEntropyKernelLocal(__global float4* y, 
-                                      __global float4 t, 
+                                      __global float4* t, 
                                       __global float4* output, 
                                       __local float4* sdata)
 {
@@ -179,7 +179,7 @@ __kernel void crossEntropyKernelLocal(__global float4* y,
 	float4 t1 = t[stride];
 	float4 i1 = cross_entropy(t1, y1);
 	float4 y2 = y[stride + 1];
-	float4 t2 = t[stride + 1]];
+	float4 t2 = t[stride + 1];
 	float4 i2 = cross_entropy(t2, y2);
 	sdata[tid] = i1 + i2;
 

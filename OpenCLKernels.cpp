@@ -51,13 +51,13 @@ void OpenCLKernels::opencl_init() {
     try {
       matrixMultiplicationSigmoidKernel = 
             new cl::Kernel(*program, 
-                           matrixMultiplicationSigmoidKernel_name);
+                           matrixMultiplicationSigmoidKernel_name.c_str());
       elementWiseSubstractKernel =
             new cl::Kernel(*program,
-                           elementWiseSubstractKernel_name);
+                           elementWiseSubstractKernel_name.c_str());
       crossEntropyKernelLocal =
             new cl::Kernel(*program,
-                           crossEntropyKernelLocal_name);
+                           crossEntropyKernelLocal_name.c_str());
       
     } catch (cl::Error &e) {
         std::cout << e.err() << e.what() << std::endl;
@@ -126,7 +126,7 @@ void OpenCLKernels::
 void OpenCLKernels::runElementWiseSubstract(
             matrix_cl_float const &tm,              
             matrix_cl_float const &ym,
-            matrix_cl_float const &em) {
+            matrix_cl_float &em) {
 
     em.cols = tm.cols;
     em.rows = tm.rows;
@@ -134,8 +134,8 @@ void OpenCLKernels::runElementWiseSubstract(
     const size_t blockSize = 512;  // float4's
     const size_t data_size_float4_global = ym.rows*ym.cols/4;
     
-    int global_size[1] = {data_size_float4_global};
-    int local_size[1] = {std::min(blockSize, global_size[0])};
+    size_t global_size[1] = {data_size_float4_global};
+    size_t local_size[1] = {std::min(blockSize, global_size[0])};
     
     assert(global_size[0] % local_size[0] == 0);
     
@@ -162,8 +162,8 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     const size_t blockSize = 4096;  // float4's
     const size_t data_size_float4_global = y.rows*y.cols/4;
     
-    int global_size[1] = {data_size_float4_global / 2};
-    int local_size[1] = {std::min(blockSize, global_size[0])};
+    size_t global_size[1] = {data_size_float4_global / 2};
+    size_t local_size[1] = {std::min(blockSize, global_size[0])};
 
     assert(global_size[0] % local_size[0] == 0);
     

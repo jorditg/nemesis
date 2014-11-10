@@ -82,13 +82,13 @@ nn::nn(const std::string &filename) : activations(activations_host),
     t.writeToDevice(*queue);
     
     // instantitate kernels
-    matmult = new OpenCLKernels(*context, devices, 0, *queue);
+    openclKernels = new OpenCLKernels(*context, devices, 0, *queue);
     // ce = new OpenCLErrorReduce(*context, devices, *queue, y, t);
 };
 
 nn::~nn() {
   //    delete ce;
-    delete matmult;
+    delete openclKernels;
     delete queue;
     delete context;
 }
@@ -125,7 +125,7 @@ void nn::FF() {
         B.cols = elementsPerLayer[i+1];
         C.rows = A.rows;
         C.cols = B.cols;
-        matmult->runMatrixMultiplicationSigmoid(A, B, C, ( i != ( N - 1 ) ) );
+        openclKernels->runMatrixMultiplicationSigmoid(A, B, C, ( i != ( N - 1 ) ) );
         C.data.readFromDevice(*queue);
         
         print_vector(C.data.hostData, C.rows, C.cols, C.offset);
@@ -144,41 +144,5 @@ void nn::FF() {
     print_vector(C.data.hostData, C.rows, C.cols, C.offset);
 }
 
-void nn::BP() {
-//    const cl_int N = numberOfLayers - 1;
-//    
-//    matrix_cl_float act(activations);
-//    matrix_cl_float wei(weights);
-//    matrix_cl_float del(deltas);
-//    matrix_cl_float to(t);
-//    matrix_cl_float yo(y);
-//    
-//    A.offset = 0;
-//    A.rows = numberOfTrainingData;
-//    B.offset = 0;
-//    C.offset = elementsPerLayer[0]*numberOfTrainingData;
-//    for ( cl_int i = N-1; i > 0; i-- ) {
-//        A.cols = elementsPerLayer[i];
-//        B.rows = A.cols;
-//        B.cols = elementsPerLayer[i+1];
-//        C.rows = A.rows;
-//        C.cols = B.cols;
-//        matmult->run(A, B, C, ( i != ( N - 1 ) ) );
-//        C.data.readFromDevice(*queue);
-//        
-//        print_vector(C.data.hostData, C.rows, C.cols, C.offset);
-//        if (i < N-1) {
-//            A.offset = C.offset;
-//            C.offset += elementsPerLayer[i+1]*numberOfTrainingData;
-//            B.offset += elementsPerLayer[i]*elementsPerLayer[i+1];
-//        }
-//    }
-// 
-//    C.data.readFromDevice(*queue);  // copy calculatied activations back to host
-//    
-//    // devolvemos referencia a vector output en host que contiene
-//    // los resultados finales
-//    
-//    print_vector(C.data.hostData, C.rows, C.cols, C.offset);
-}
+
 

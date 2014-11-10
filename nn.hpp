@@ -34,7 +34,7 @@ class nn {
     std::vector<cl::Device> devices;
     cl::CommandQueue *queue;   // unique OpenCL command queue;
 
-    OpenCLKernels *matmult;
+    OpenCLKernels *openclKernels;
     //OpenCLErrorReduce *ce;
 
     void opencl_device_memory_allocation();
@@ -54,7 +54,6 @@ class nn {
     void populate_fixed_weights();
     
     void FF();
-    void BP();
 };
 
 #endif
