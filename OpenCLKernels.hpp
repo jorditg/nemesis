@@ -36,7 +36,8 @@ class OpenCLKernels {
             matrix_cl_float const &A,              
             matrix_cl_float const &B,
             matrix_cl_float const &C,
-            bool setBias);
+            bool setBias = true, 
+            bool calcSigmoid = true);
     
     void runElementWiseSubstract(
             matrix_cl_float const &t,              
@@ -47,6 +48,14 @@ class OpenCLKernels {
             matrix_cl_float const &t, 
             matrix_cl_float const &y, 
             matrix_cl_float &error);
+    
+    cl_float runTranspose(
+            matrix_cl_float const &a,
+            matrix_cl_float &transpose);
+    
+    void runElementWiseMultiplicationBySigmoidDerivativeKernel(
+            matrix_cl_float const &deltas,              
+            matrix_cl_float const &activations);
  private:
     const std::string sourceFile = "NN_Kernels.cl";
     
@@ -71,6 +80,13 @@ class OpenCLKernels {
     const std::string crossEntropyKernelLocal_name =
                       "crossEntropyKernelLocal";
     
+    cl::Kernel *transposeKernelLocal;
+    const std::string transposeKernelLocal_name =
+                      "transpose";
+    
+    cl::Kernel *elementWiseMultiplicationBySigmoidDerivativeKernel;
+    const std::string elementWiseMultiplicationBySigmoidDerivativeKernel_name =
+                      "elementWiseMultiplicationBySigmoidDerivativeKernel";
     
     bool lds;
     

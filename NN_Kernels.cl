@@ -14,11 +14,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ********************************************************************/
 
-#define TILEX 4
-
-#define TILEX_SHIFT 2
-#define TILEY 4
-#define TILEY_SHIFT 2
+#include "NN_Kernels.h"
 
 
 float4 sigmoid(float4 x)
@@ -34,11 +30,6 @@ float4 sigmoid_derivative(float4 sigmoid)
 float4 cross_entropy(float4 y, float4 t)
 {
   return ( t * log(y) + (1.0f - t) * log (1.0f - y) );
-}
-
-float4 cross_entropy_derivative(float4 y, float4 t)
-{
-  return ( ( t - y ) / ( y * (1.0f - y) ) );
 }
 
 /* Matrix A is cached into local memory block */
@@ -157,14 +148,29 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
  */
 __kernel void elementWiseSubstractKernel(__global float4 *t,
                                          __global float4 *y,
-                                         __global float4* delta)
+                                         __global float4* delta,
+                                         int offset_t,
+                                         int offset_y,
+                                         int offset_delta)
 {
     int i = get_global_id(0);
-    delta[i] = t[i] - y[i];
+    delta[offset_delta + i] = t[offset_t + i] - y[offset_y + i];
 }
 
-__kernel void crossEntropyKernelLocal(__global float4* y, 
-                                      __global float4* t, 
+__kernel void elementWiseMultiplicationBySigmoidDerivativeKernel(
+                                         __global float4 *del,
+                                         __global float4 *act,
+                                         int offset_del,
+                                         int offset_act)
+{
+    int i = get_global_id(0);
+    
+    delta[offset_del + i] *= sigmoidDerivative(act[offset_act + i]);
+}
+
+
+__kernel void crossEntropyKernelLocal(__global float4* t, 
+                                      __global float4* y, 
                                       __global float4* output, 
                                       __local float4* sdata)
 {
@@ -200,3 +206,43 @@ __kernel void crossEntropyKernelLocal(__global float4* y,
 
 // Al finalizar la función se obtiene un vector de output de tamaño igual al número de grupos
 // que hay que sumar, obteniendo el resultado final
+
+
+/* Matrix transpose with OpenCL
+* Device code.
+*/
+
+// This kernel is optimized to ensure all global reads and writes are coalesced,
+// and to avoid bank conflicts in shared memory.  This kernel is up to 11x faster
+// than the naive kernel.  Note that the shared memory array is sized to 
+// (TRANSPOSE_BLOCK_DIM+1)*TRANSPOSE_BLOCK_DIM.  This pads each row of the 2D block in shared memory 
+// so that bank conflicts do not occur when threads address the array column-wise.
+__kernel void transpose(__global float *odata, 
+                        __global float *idata, 
+                        int width, 
+                        int height, 
+                        __local float* block,
+                        int offset_o,
+                        int offset_i)
+{
+	// read the matrix tile into shared memory
+	unsigned int xIndex = get_global_id(0);
+	unsigned int yIndex = get_global_id(1);
+
+	if((xIndex < width) && (yIndex < height))
+	{
+		unsigned int index_in = offset_i + yIndex * width + xIndex;
+		block[get_local_id(1)*(TRANSPOSE_BLOCK_DIM+1)+get_local_id(0)] = idata[index_in];
+	}
+
+	barrier(CLK_LOCAL_MEM_FENCE);
+
+	// write the transposed matrix tile to global memory
+	xIndex = get_group_id(1) * TRANSPOSE_BLOCK_DIM + get_local_id(0);
+	yIndex = get_group_id(0) * TRANSPOSE_BLOCK_DIM + get_local_id(1);
+	if((xIndex < height) && (yIndex < width))
+        {
+		unsigned int index_out = offset_o + yIndex * height + xIndex;
+		odata[index_out] = block[get_local_id(0)*(TRANSPOSE_BLOCK_DIM+1)+get_local_id(1)];
+	}
+}

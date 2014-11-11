@@ -29,7 +29,8 @@ void nn::populate_fixed_weights() {
 }
 
 nn::nn(const std::string &filename) : activations(activations_host),
-                                      weights(weights_host), 
+                                      weights(weights_host),
+                                      weights_transposed(weights_transposed_host),
                                       deltas(deltas_host),
                                       t(t_host) {
     
@@ -61,7 +62,9 @@ nn::nn(const std::string &filename) : activations(activations_host),
     
     activations.hostData.resize(numberOfElements*numberOfTrainingData);
     weights.hostData.resize(numberOfElements);
-    deltas.hostData.resize(numberOfElements*numberOfTrainingData);
+    weights_transposed.hostData.resize(numberOfElements);
+    // there are no deltas in input layer
+    deltas.hostData.resize((numberOfElements-elementsPerLayer[0])*numberOfTrainingData);
 
     load_csv_vector("weights.txt", weights.hostData);
     
@@ -74,6 +77,7 @@ nn::nn(const std::string &filename) : activations(activations_host),
     // Create buffers and copy host contents
     activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
+    weights_transposed.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     deltas.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
 
@@ -93,20 +97,18 @@ nn::~nn() {
     delete context;
 }
 
-/*
- * The next functions encode the required order of execution for feedforwarding
- * the neural network that is encoded in the next table:
- * 
- * ORDER ->     0          1          2           3         ...
- * MATRIX
- *   |
- *  \/
- * 1st      inputs      output1     output2     output1     ...
- * 2nd      weights0    weights2    weights3    weights4    ...
- * result   output1     output2     output1     output2     ...
- * 
- */
-
+void nn::transposeWeights() {
+    // done in host
+    weights.readFromDevice(*queue);
+    for ( size_t l = 0; l < numberOfLayers - 1; l++) {
+        for (size_t i = 0; i < elementsPerLayer[l] ; i++) {
+            for (size_t j = 0; j < elementsPerLayer[l+1]; j++) {
+                weights_transposed[j*elementsPerLayer[l] + i] = weights[i*elementsPerLayer[l+1] + j];
+            }
+        }
+    }
+    weights_transposed.writeToDevice(*queue);
+}
 
 void nn::FF() {
     const cl_int N = numberOfLayers - 1;
@@ -126,9 +128,8 @@ void nn::FF() {
         C.rows = A.rows;
         C.cols = B.cols;
         openclKernels->runMatrixMultiplicationSigmoid(A, B, C, ( i != ( N - 1 ) ) );
-        C.data.readFromDevice(*queue);
-        
-        print_vector(C.data.hostData, C.rows, C.cols, C.offset);
+        //C.data.readFromDevice(*queue);        
+        //print_vector(C.data.hostData, C.rows, C.cols, C.offset);
         if (i < N-1) {
             A.offset = C.offset;
             C.offset += elementsPerLayer[i+1]*numberOfTrainingData;
@@ -144,5 +145,38 @@ void nn::FF() {
     print_vector(C.data.hostData, C.rows, C.cols, C.offset);
 }
 
-
+void nn::BP()
+{
+    const cl_int N = numberOfLayers - 1;
+    
+    matrix_cl_float tm(t);
+    matrix_cl_float act(activations);
+    matrix_cl_float wei(weights);
+    matrix_cl_float del(deltas);
+    matrix_cl_float del_r(deltas);
+    matrix_cl_float wei_t(weights_transposed);
+    
+    // first of all calculate the deltas of the last layer
+    tm.set(numberOfTrainingData, elementsPerLayer[N], 0);
+    act.set(tm.rows, 
+           tm.cols, 
+           numberOfElements - elementsPerLayer[N]*numberOfTrainingData);
+    del.set(tm.rows, 
+            tm.cols, 
+            numberOfElements - (elementsPerLayer[N]-elementsPerLayer[0])*numberOfTrainingData);
+    openclKernels->runElementWiseSubstract(tm, act, del);
+     
+    transposeWeights();
+    for (int i = N - 1; i > 1; i--) {
+        del_r.set(del.rows, 
+                  elementsPerLayer[i], 
+                  del.offset - elementsPerLayer[i]*numberOfTrainingData);
+        act.set(del_r.rows,
+                del_r.cols,
+                act.offset - elementsPerLayer[i]*numberOfTrainingData);
+        openclKernels->runMatrixMultiplicationSigmoid(del, wei_t, del_r, false, false);
+        openclKernels->runElementWiseMultiplicationBySigmoidDerivativeKernel(del_r, act);
+        del.set(del_r.rows, del_r.cols, del_r.offset);
+    }
+}
 

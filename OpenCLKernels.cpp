@@ -5,6 +5,8 @@
  * Created on 23 de octubre de 2014, 10:25
  */
 
+#include "NN_Kernels.h"
+
 #include <string>
 #include <iostream>
 
@@ -13,7 +15,9 @@
 #include "OpenCLKernels.hpp"
 #include "common.hpp"
 
-OpenCLKernels::~OpenCLKernels() {    
+OpenCLKernels::~OpenCLKernels() {
+    delete elementWiseMultiplicationBySigmoidDerivativeKernel;
+    delete transposeKernelLocal;
     delete crossEntropyKernelLocal;
     delete elementWiseSubstractKernel;
     delete matrixMultiplicationSigmoidKernel;
@@ -58,6 +62,15 @@ void OpenCLKernels::opencl_init() {
       crossEntropyKernelLocal =
             new cl::Kernel(*program,
                            crossEntropyKernelLocal_name.c_str());
+
+      transposeKernelLocal =
+            new cl::Kernel(*program,
+                           transposeKernelLocal_name.c_str());
+      
+      elementWiseMultiplicationBySigmoidDerivativeKernel =
+            new cl::Kernel(*program,
+                           elementWiseMultiplicationBySigmoidDerivativeKernel_name.c_str());              
+      
       
     } catch (cl::Error &e) {
         std::cout << e.err() << e.what() << std::endl;
@@ -68,7 +81,8 @@ void OpenCLKernels::
      runMatrixMultiplicationSigmoid(matrix_cl_float const &A,              
                                     matrix_cl_float const &B,
                                     matrix_cl_float const &C,
-                                    bool setBias) {
+                                    bool setBias = true, 
+                                    bool calcSigmoid = true) {
     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
                                    size_t(C.rows/4)};
@@ -97,7 +111,7 @@ void OpenCLKernels::
     matrixMultiplicationSigmoidKernel->setArg(6, C.offset);
     matrixMultiplicationSigmoidKernel->setArg(7, cl::__local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
     matrixMultiplicationSigmoidKernel->setArg(8, setBias?1:0);
-    matrixMultiplicationSigmoidKernel->setArg(9, 1);    // calculate sigmoid after matrix multiplication
+    matrixMultiplicationSigmoidKernel->setArg(9, calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
@@ -128,8 +142,8 @@ void OpenCLKernels::runElementWiseSubstract(
             matrix_cl_float const &ym,
             matrix_cl_float &em) {
 
-    em.cols = tm.cols;
-    em.rows = tm.rows;
+    assert(tm.cols == ym.cols && tm.rows == ym.rows && 
+           tm.cols == em.cols && tm.rows == em.rows);
     
     const size_t blockSize = 512;  // float4's
     const size_t data_size_float4_global = ym.rows*ym.cols/4;
@@ -146,6 +160,9 @@ void OpenCLKernels::runElementWiseSubstract(
     elementWiseSubstractKernel->setArg(0, *(tm.data.deviceData));
     elementWiseSubstractKernel->setArg(1, *(ym.data.deviceData));
     elementWiseSubstractKernel->setArg(2, *(em.data.deviceData));
+    elementWiseSubstractKernel->setArg(3, *(tm.offset));
+    elementWiseSubstractKernel->setArg(4, *(ym.offset));
+    elementWiseSubstractKernel->setArg(5, *(em.offset));
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
@@ -153,6 +170,40 @@ void OpenCLKernels::runElementWiseSubstract(
     queue.enqueueNDRangeKernel(*elementWiseSubstractKernel, offset, global, local);
     queue.finish();
 }
+
+// NOT TESTED YET
+void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
+            matrix_cl_float const &deltas,              
+            matrix_cl_float const &activations) {
+
+    assert(deltas.cols == activations.cols 
+           && deltas.rows == activations.rows);
+    
+    const size_t blockSize = 512;  // float4's
+    const size_t data_size_float4_global = deltas.rows*deltas.cols/4;
+    
+    size_t global_size[1] = {data_size_float4_global};
+    size_t local_size[1] = {std::min(blockSize, global_size[0])};
+    
+    assert(global_size[0] % local_size[0] == 0);
+    
+    std::cout << "Launching for device\n"
+              << " (global size: " << global_size[0] << ")\n"
+              << " ( local size: " << local_size[0] << ")\n";
+
+    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(0, *(deltas.data.deviceData));
+    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(1, *(activations.data.deviceData));
+    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(3, *(deltas.offset));
+    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(4, *(activations.offset));
+    
+    const cl::NDRange offset = cl::NullRange;
+    const cl::NDRange global(global_size[0]);
+    const cl::NDRange local(local_size[0]);
+    queue.enqueueNDRangeKernel(*elementWiseMultiplicationBySigmoidDerivativeKernel, offset, global, local);
+    queue.finish();
+}
+
+
 
 // NOT TESTED YET
 cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t, 
@@ -209,4 +260,30 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     }
     
     return ce;
+}
+
+void OpenCLKernels::runTranspose(matrix_cl_float const &a,
+                                 matrix_cl_float &transpose) {
+
+    // -----------------------------------------------------------------------
+    // Setting kernel arguments
+    // -----------------------------------------------------------------------    
+    transposeKernelLocal->setArg(0, transpose.data.deviceData);
+    transposeKernelLocal->setArg(1, a.data.deviceData);
+    transposeKernelLocal->setArg(2, a.cols);
+    transposeKernelLocal->setArg(3, a.rows);
+    transposeKernelLocal->setArg(4, cl::__local(( TRANSPOSE_BLOCK_DIM+1 )
+                                                * TRANSPOSE_BLOCK_DIM 
+                                                * sizeof(cl_float)));
+    transposeKernelLocal->setArg(5, transpose.offset);
+    transposeKernelLocal->setArg(6, a.offset);
+
+    size_t global_size[2] = {a.cols, a.rows};
+    size_t local_size[2] = {TRANSPOSE_BLOCK_DIM, TRANSPOSE_BLOCK_DIM };
+    
+    const cl::NDRange offset = cl::NullRange;
+    const cl::NDRange global(global_size[0], global_size[1]);
+    const cl::NDRange local(local_size[0], local_size[1]);
+    queue.enqueueNDRangeKernel(*transposeKernelLocal, offset, global, local);
+    queue.finish();
 }
