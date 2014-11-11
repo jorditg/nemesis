@@ -17,7 +17,8 @@ int main(int argc, char** argv) {
 
     nn nn1(filename);
     nn1.FF();
-
+    nn1.BP();
+    
     return 0;
 }
 

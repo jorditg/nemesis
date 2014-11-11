@@ -100,10 +100,10 @@ nn::~nn() {
 void nn::transposeWeights() {
     // done in host
     weights.readFromDevice(*queue);
-    for ( size_t l = 0; l < numberOfLayers - 1; l++) {
-        for (size_t i = 0; i < elementsPerLayer[l] ; i++) {
-            for (size_t j = 0; j < elementsPerLayer[l+1]; j++) {
-                weights_transposed[j*elementsPerLayer[l] + i] = weights[i*elementsPerLayer[l+1] + j];
+    for ( int l = 0; l < numberOfLayers - 1; l++) {
+        for (int i = 0; i < elementsPerLayer[l] ; i++) {
+            for (int j = 0; j < elementsPerLayer[l+1]; j++) {
+                weights_transposed.hostData.assign(j*elementsPerLayer[l] + i, weights.hostData[i*elementsPerLayer[l+1] + j]);
             }
         }
     }

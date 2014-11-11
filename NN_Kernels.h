@@ -17,4 +17,4 @@
 // block dimension for transpose
 #define TRANSPOSE_BLOCK_DIM 16
 
-
+#endif

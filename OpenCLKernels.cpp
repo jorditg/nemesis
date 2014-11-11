@@ -81,8 +81,8 @@ void OpenCLKernels::
      runMatrixMultiplicationSigmoid(matrix_cl_float const &A,              
                                     matrix_cl_float const &B,
                                     matrix_cl_float const &C,
-                                    bool setBias = true, 
-                                    bool calcSigmoid = true) {
+                                    bool setBias, 
+                                    bool calcSigmoid) {
     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
                                    size_t(C.rows/4)};
@@ -160,9 +160,9 @@ void OpenCLKernels::runElementWiseSubstract(
     elementWiseSubstractKernel->setArg(0, *(tm.data.deviceData));
     elementWiseSubstractKernel->setArg(1, *(ym.data.deviceData));
     elementWiseSubstractKernel->setArg(2, *(em.data.deviceData));
-    elementWiseSubstractKernel->setArg(3, *(tm.offset));
-    elementWiseSubstractKernel->setArg(4, *(ym.offset));
-    elementWiseSubstractKernel->setArg(5, *(em.offset));
+    elementWiseSubstractKernel->setArg(3, tm.offset);
+    elementWiseSubstractKernel->setArg(4, ym.offset);
+    elementWiseSubstractKernel->setArg(5, em.offset);
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
@@ -193,8 +193,8 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
 
     elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(0, *(deltas.data.deviceData));
     elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(1, *(activations.data.deviceData));
-    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(3, *(deltas.offset));
-    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(4, *(activations.offset));
+    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(2, deltas.offset);
+    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(3, activations.offset);
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
@@ -229,7 +229,7 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     crossEntropyKernelLocal->setArg(0, t.data.deviceData);
     crossEntropyKernelLocal->setArg(1, y.data.deviceData);
     crossEntropyKernelLocal->setArg(2, error.data.deviceData);
-    crossEntropyKernelLocal->setArg(4, cl::__local(local_size[0] * 4 * sizeof(cl_float)));
+    crossEntropyKernelLocal->setArg(3, cl::__local(local_size[0] * 4 * sizeof(cl_float)));
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on

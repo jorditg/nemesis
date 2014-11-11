@@ -49,7 +49,7 @@ class OpenCLKernels {
             matrix_cl_float const &y, 
             matrix_cl_float &error);
     
-    cl_float runTranspose(
+    void runTranspose(
             matrix_cl_float const &a,
             matrix_cl_float &transpose);
     
