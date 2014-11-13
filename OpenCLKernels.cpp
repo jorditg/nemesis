@@ -70,7 +70,7 @@ void OpenCLKernels::opencl_init() {
       
       elementWiseMultiplicationBySigmoidDerivativeKernel =
             new cl::Kernel(*program,
-                           elementWiseMultiplicationBySigmoidDerivativeKernel_name.c_str());      
+                           elementWiseMultiplicationBySigmoidDerivativeKernel_name.c_str());
       
     } catch(const cl::Error &e) {
         std::cout << e.err() << e.what() << std::endl;

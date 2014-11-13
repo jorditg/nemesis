@@ -168,7 +168,10 @@ __kernel void elementWiseMultiplicationBySigmoidDerivativeKernel(
                                          int offset_act)
 {
     int i = get_global_id(0);
-    del[offset_del/4 + i] *= sigmoid_derivative(act[offset_act/4 + i]);
+
+    float4 a = sigmoid_derivative(act[offset_act/4 + i]);
+    
+    del[offset_del/4 + i] *= a;
 }
 
 
