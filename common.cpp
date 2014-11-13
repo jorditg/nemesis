@@ -1,5 +1,8 @@
 #include "common.hpp"
 
+#include <string>
+#include <vector>
+
 typedef boost::tokenizer< boost::escaped_list_separator<char> > Tokenizer;
 
 void load_csv_data(const std::string & filename,
@@ -30,7 +33,7 @@ void load_csv_data(const std::string & filename,
     layers = 0;
     for (std::vector<std::string>::iterator it = vec.begin() ;
          it != vec.end(); ++it) {
-        elements.push_back(std::stoi(*it) + 1 /* bias element */ );
+        elements.push_back(std::stoi(*it) + 1 /* bias element */);
         layers++;
     }
     elements[elements.size()-1]--;  // output elements doesn't have bias
@@ -88,7 +91,7 @@ void load_csv_vector(const std::string & filename,
         //           std::ostream_iterator<std::string>(std::cout, "|"));
         // std::cout << "\n----------------------" << std::endl;
 
-        // check that there is not incomplete data       
+        // check that there is not incomplete data
         for (std::vector<std::string>::iterator it = vec.begin();
              it != vec.end(); ++it) {
           *wit = std::stof(*it);
@@ -100,9 +103,9 @@ void load_csv_vector(const std::string & filename,
 }
 
 
-void print_vector(const std::vector<cl_float> &v, 
-                  int rows, 
-                  int cols, 
+void print_vector(const std::vector<cl_float> &v,
+                  int rows,
+                  int cols,
                   int offset = 0) {
   int lines = 0;
   for (size_t i = offset; i < v.size(); i++) {
@@ -113,4 +116,10 @@ void print_vector(const std::vector<cl_float> &v,
     }
     if (lines == rows ) break;
   }
+}
+
+void print(const matrix_cl_float &m, const std::string header) {
+  if (!header.empty())
+    std::cout << header << std::endl;
+  print_vector(m.data.hostData, m.rows, m.cols, m.offset);
 }

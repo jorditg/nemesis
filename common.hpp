@@ -14,6 +14,7 @@
 #include <cassert>
 #include <vector>
 #include <string>
+
 #include <fstream>
 #include <iostream>
 
@@ -22,7 +23,7 @@ struct host_device_memory_map {
   std::vector<T> & hostData;
   cl::Buffer * deviceData;
   
-  inline host_device_memory_map(std::vector<T> & v) : hostData(v) {}
+  explicit inline host_device_memory_map(std::vector<T> & v) : hostData(v) {}
   
   inline host_device_memory_map(const host_device_memory_map<T> & orig) :
                                 hostData(orig.hostData), 
@@ -59,21 +60,21 @@ struct host_device_memory_map {
   }
 };
 
-template <typename T> 
+template <typename T>
 struct opencl_matrix {
     host_device_memory_map<T> & data;
     cl_uint rows;
     cl_uint cols;
     cl_uint offset;
     
-    inline opencl_matrix(host_device_memory_map<T> & d) : 
+    explicit inline opencl_matrix(host_device_memory_map<T> & d) :
                          data(d), rows(0), cols(0), offset(0) {}
     
-    inline opencl_matrix(const opencl_matrix<T> & orig) : 
-                         data(orig.data), rows(orig.rows), 
+    inline opencl_matrix(const opencl_matrix<T> & orig) :
+                         data(orig.data), rows(orig.rows),
                          cols(orig.cols), offset(orig.offset) {}
     
-    inline opencl_matrix const & set (cl_uint r, cl_uint c, cl_uint o = 0) {
+    inline opencl_matrix const & set(cl_uint r, cl_uint c, cl_uint o = 0) {
         rows = r;
         cols = c;
         offset = o;
@@ -93,10 +94,12 @@ void load_csv_data(const std::string & filename,
 void load_csv_vector(const std::string & filename,
                      std::vector<cl_float> &weights);
 
-void print_vector(const std::vector<cl_float> & v, 
-                  int rows, 
-                  int cols, 
+void print_vector(const std::vector<cl_float> & v,
+                  int rows,
+                  int cols,
                   int offset);
+
+void print(const matrix_cl_float &m, const std::string header = "");
 
 #endif  /* COMMON_HPP */
 

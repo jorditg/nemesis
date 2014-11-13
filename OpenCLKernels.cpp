@@ -5,13 +5,14 @@
  * Created on 23 de octubre de 2014, 10:25
  */
 
-#include "NN_Kernels.h"
-
 #include <string>
+#include <vector>
+
 #include <iostream>
 
 #include <algorithm>    // std::min
 
+#include "NN_Kernels.h"
 #include "OpenCLKernels.hpp"
 #include "common.hpp"
 
@@ -38,7 +39,7 @@ void OpenCLKernels::opencl_init() {
     
     try {
         program->build(devices);
-    } catch (const cl::Error &e) {
+    } catch(const cl::Error &e) {
         // get compilation log in case of failure
      std::cout << "Build Status: "
         << program->getBuildInfo<CL_PROGRAM_BUILD_STATUS>(devices[device_id])
@@ -53,8 +54,8 @@ void OpenCLKernels::opencl_init() {
     
     lds = true;
     try {
-      matrixMultiplicationSigmoidKernel = 
-            new cl::Kernel(*program, 
+      matrixMultiplicationSigmoidKernel =
+          new cl::Kernel(*program,
                            matrixMultiplicationSigmoidKernel_name.c_str());
       elementWiseSubstractKernel =
             new cl::Kernel(*program,
@@ -69,19 +70,18 @@ void OpenCLKernels::opencl_init() {
       
       elementWiseMultiplicationBySigmoidDerivativeKernel =
             new cl::Kernel(*program,
-                           elementWiseMultiplicationBySigmoidDerivativeKernel_name.c_str());              
+                           elementWiseMultiplicationBySigmoidDerivativeKernel_name.c_str());      
       
-      
-    } catch (cl::Error &e) {
+    } catch(const cl::Error &e) {
         std::cout << e.err() << e.what() << std::endl;
     }
 }
 
 void OpenCLKernels::
-     runMatrixMultiplicationSigmoid(matrix_cl_float const &A,              
+     runMatrixMultiplicationSigmoid(matrix_cl_float const &A,
                                     matrix_cl_float const &B,
                                     matrix_cl_float const &C,
-                                    bool setBias, 
+                                    bool setBias,
                                     bool calcSigmoid) {
     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
@@ -101,7 +101,7 @@ void OpenCLKernels::
 
     // -----------------------------------------------------------------------
     // Setting kernel arguments
-    // -----------------------------------------------------------------------    
+    // -----------------------------------------------------------------------
     matrixMultiplicationSigmoidKernel->setArg(0, *(A.data.deviceData));
     matrixMultiplicationSigmoidKernel->setArg(1, *(B.data.deviceData));
     matrixMultiplicationSigmoidKernel->setArg(2, *(C.data.deviceData));
@@ -109,9 +109,11 @@ void OpenCLKernels::
     matrixMultiplicationSigmoidKernel->setArg(4, A.offset);
     matrixMultiplicationSigmoidKernel->setArg(5, B.offset);
     matrixMultiplicationSigmoidKernel->setArg(6, C.offset);
-    matrixMultiplicationSigmoidKernel->setArg(7, cl::__local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
+    matrixMultiplicationSigmoidKernel->setArg(7,
+          cl::__local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
     matrixMultiplicationSigmoidKernel->setArg(8, setBias?1:0);
-    matrixMultiplicationSigmoidKernel->setArg(9, calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
+    matrixMultiplicationSigmoidKernel->setArg(9,
+          calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
@@ -130,7 +132,10 @@ void OpenCLKernels::
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0], global_size[1]);
     const cl::NDRange local(local_size[0], local_size[1]);
-    queue.enqueueNDRangeKernel(*matrixMultiplicationSigmoidKernel, offset, global, local);
+    queue.enqueueNDRangeKernel(*matrixMultiplicationSigmoidKernel,
+                               offset,
+                               global,
+                               local);
     queue.finish();
 
     std::cout << "Matmult finished\n";
@@ -138,11 +143,11 @@ void OpenCLKernels::
 
 // NOT TESTED YET
 void OpenCLKernels::runElementWiseSubstract(
-            matrix_cl_float const &tm,              
+            matrix_cl_float const &tm,
             matrix_cl_float const &ym,
             matrix_cl_float &em) {
 
-    assert(tm.cols == ym.cols && tm.rows == ym.rows && 
+    assert(tm.cols == ym.cols && tm.rows == ym.rows &&
            tm.cols == em.cols && tm.rows == em.rows);
     
     const size_t blockSize = 512;  // float4's
@@ -167,16 +172,19 @@ void OpenCLKernels::runElementWiseSubstract(
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
     const cl::NDRange local(local_size[0]);
-    queue.enqueueNDRangeKernel(*elementWiseSubstractKernel, offset, global, local);
+    queue.enqueueNDRangeKernel(*elementWiseSubstractKernel,
+                               offset,
+                               global,
+                               local);
     queue.finish();
 }
 
 // NOT TESTED YET
 void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
-            matrix_cl_float const &deltas,              
+            matrix_cl_float const &deltas,
             matrix_cl_float const &activations) {
 
-    assert(deltas.cols == activations.cols 
+    assert(deltas.cols == activations.cols
            && deltas.rows == activations.rows);
     
     const size_t blockSize = 512;  // float4's
@@ -191,23 +199,31 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
               << " (global size: " << global_size[0] << ")\n"
               << " ( local size: " << local_size[0] << ")\n";
 
-    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(0, *(deltas.data.deviceData));
-    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(1, *(activations.data.deviceData));
-    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(2, deltas.offset);
-    elementWiseMultiplicationBySigmoidDerivativeKernel->setArg(3, activations.offset);
+    elementWiseMultiplicationBySigmoidDerivativeKernel->
+        setArg(0, *(deltas.data.deviceData));
+    elementWiseMultiplicationBySigmoidDerivativeKernel->
+        setArg(1, *(activations.data.deviceData));
+    elementWiseMultiplicationBySigmoidDerivativeKernel->
+        setArg(2, deltas.offset);
+    elementWiseMultiplicationBySigmoidDerivativeKernel->
+        setArg(3, activations.offset);
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
     const cl::NDRange local(local_size[0]);
-    queue.enqueueNDRangeKernel(*elementWiseMultiplicationBySigmoidDerivativeKernel, offset, global, local);
+    queue.enqueueNDRangeKernel(
+        *elementWiseMultiplicationBySigmoidDerivativeKernel,
+        offset,
+        global,
+        local);
     queue.finish();
 }
 
 
 
 // NOT TESTED YET
-cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t, 
-                                        matrix_cl_float const &y, 
+cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
+                                        matrix_cl_float const &y,
                                         matrix_cl_float &error) {
 
     const size_t blockSize = 4096;  // float4's
@@ -225,11 +241,12 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     
     // -----------------------------------------------------------------------
     // Setting kernel arguments
-    // -----------------------------------------------------------------------    
+    // -----------------------------------------------------------------------
     crossEntropyKernelLocal->setArg(0, t.data.deviceData);
     crossEntropyKernelLocal->setArg(1, y.data.deviceData);
     crossEntropyKernelLocal->setArg(2, error.data.deviceData);
-    crossEntropyKernelLocal->setArg(3, cl::__local(local_size[0] * 4 * sizeof(cl_float)));
+    crossEntropyKernelLocal->setArg(3,
+                           cl::__local(local_size[0] * 4 * sizeof(cl_float)));
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
@@ -267,13 +284,13 @@ void OpenCLKernels::runTranspose(matrix_cl_float const &a,
 
     // -----------------------------------------------------------------------
     // Setting kernel arguments
-    // -----------------------------------------------------------------------    
+    // -----------------------------------------------------------------------
     transposeKernelLocal->setArg(0, transpose.data.deviceData);
     transposeKernelLocal->setArg(1, a.data.deviceData);
     transposeKernelLocal->setArg(2, a.cols);
     transposeKernelLocal->setArg(3, a.rows);
-    transposeKernelLocal->setArg(4, cl::__local(( TRANSPOSE_BLOCK_DIM+1 )
-                                                * TRANSPOSE_BLOCK_DIM 
+    transposeKernelLocal->setArg(4, cl::__local((TRANSPOSE_BLOCK_DIM+1)
+                                                * TRANSPOSE_BLOCK_DIM
                                                 * sizeof(cl_float)));
     transposeKernelLocal->setArg(5, transpose.offset);
     transposeKernelLocal->setArg(6, a.offset);
