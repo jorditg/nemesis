@@ -181,7 +181,7 @@ void nn::BP() {
     print(del, "t-y");
 
     transposeWeights();
-    wei_t.set(0, 0, wei_t.data.hostData.size());
+    wei_t.set(0, 0, wei_t.data.hostData.size());  // rows/cols will be set later
     for (int i = N - 1; i > 1; i--) {
         del_r.set(del.rows,
                   elementsPerLayer[i],
@@ -192,17 +192,19 @@ void nn::BP() {
         act.set(del_r.rows,
                 del_r.cols,
                 act.offset - elementsPerLayer[i]*numberOfTrainingData);
+        print(wei_t, "Wt");
+        print(act, "delta");
         openclKernels->
             runMatrixMultiplicationSigmoid(del, wei_t, del_r, false, false);
 
         del_r.data.readFromDevice(*queue);
-        print(del_r);
+        print(del_r, "delta*Wt");
 
         openclKernels->
             runElementWiseMultiplicationBySigmoidDerivativeKernel(del_r, act);
 
         del_r.data.readFromDevice(*queue);
-        print(del_r);
+        print(del_r, "delta_r*Wt.*s*(s-1)");
 
         del.set(del_r.rows, del_r.cols, del_r.offset);
     }

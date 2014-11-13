@@ -155,10 +155,10 @@ __kernel void elementWiseSubstractKernel(__global float4 *t,
 {
     int i = get_global_id(0);
     
-    float4 a = t[offset_t + i];
-    float4 b = y[offset_y + i];
+    float4 a = t[offset_t/4 + i];
+    float4 b = y[offset_y/4 + i];
     
-    delta[offset_delta + i] =  a - b;
+    delta[offset_delta/4 + i] =  a - b;
 }
 
 __kernel void elementWiseMultiplicationBySigmoidDerivativeKernel(
@@ -168,7 +168,7 @@ __kernel void elementWiseMultiplicationBySigmoidDerivativeKernel(
                                          int offset_act)
 {
     int i = get_global_id(0);
-    del[offset_del + i] *= sigmoid_derivative(act[offset_act + i]);
+    del[offset_del/4 + i] *= sigmoid_derivative(act[offset_act/4 + i]);
 }
 
 
