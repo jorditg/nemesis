@@ -16,10 +16,27 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #include "NN_Kernels.h"
 
+/*
+ *  Returns the index of the element located in (row, col) in a 
+ *  row-major memory ordered matrix (Fortran Type)
+ */
+int get_row_major_index(int offset, int row, int col, int nr_rows, int nr_cols)
+{
+    return (offset + col + row*nr_cols);
+}
+
+/*
+ *  Returns the index of the element located in (row, col) in a
+ *  column-major memory ordered matrix (Fortran Type)
+ */
+int get_col_major_index(int offset, int row, int col, int nr_rows, int nr_cols)
+{
+    return (offset + row + col*nr_rows);
+}
 
 float4 sigmoid(float4 x)
 {
-  return 1.0f / ( 1.0f + exp( -x ) ); 
+    return 1.0f / ( 1.0f + exp( -x ) ); 
 }
 
 float4 sigmoid_derivative(float4 sigmoid)
@@ -29,7 +46,8 @@ float4 sigmoid_derivative(float4 sigmoid)
 
 float4 cross_entropy(float4 y, float4 t)
 {
-  return ( t * log(y) + (1.0f - t) * log (1.0f - y) );
+    const float4 epsilon = 1E-15;
+    return ( t * log(y + epsilon) + (1.0f - t) * log (1.0f - y + epsilon) );
 }
 
 /* Matrix A is cached into local memory block */
@@ -44,12 +62,22 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
                               int offsetC,
                               __local float4 *blockA,
                               int setBias,
-                              int calcSigmoid)
+                              int calcSigmoid,
+                              int AInColMajorOrder,
+                              int BInColMajorOrder)
 {
     int blockPos = get_local_id(0) + get_local_size(0) * (get_local_id(1) << TILEY_SHIFT); //Should be : localId * (TILEX / 4) (float4)
-    
+
     /* Position of thread will be according to the number of values it writes i.e TILE size */
-    int globalPos = offsetC/4 + get_global_id(0) + (get_global_id(1) << TILEY_SHIFT) * get_global_size(0);
+    
+    //int globalPos = offsetC + get_global_id(0) + (get_global_id(1) << TILEY_SHIFT) * get_global_size(0);
+    const int col_C = get_global_id(0);
+    const int row_C = (get_global_id(1) << TILEY_SHIFT);
+    const int nr_rows_C = 0;    // not required for row-major index calculation
+    const int nr_cols_C = get_global_size(0);; 
+    int globalPos = get_row_major_index(offsetC, row_C, col_C, nr_rows_C, nr_cols_C);
+
+
 
     /* Each thread writes 4 float4s */
     float4 sum0 = (float4)(0);
@@ -59,22 +87,41 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
 
     int temp = widthA / 4;
 
+    int AIdxMultiplier = (AInColMajorOrder?1:temp);
+    int BIdxMultiplier = (BInColMajorOrder?1:get_global_size(0));
+    
+    
     /* This loop runs for number of blocks of A in horizontal direction */
     for(int i = 0; i < (temp / get_local_size(0)); i++)
     {
         /* Calculate global ids of threads from the particular block to load from matrix A depending on i */
-        int globalPosA = offsetA/4 + i * get_local_size(0) + get_local_id(0) + (get_global_id(1) << TILEY_SHIFT) * temp;
+        //int globalPosA = offsetA + i * get_local_size(0) + get_local_id(0) + (get_global_id(1) << TILEY_SHIFT) * temp;
 
+        const int col_A = i * get_local_size(0) + get_local_id(0);
+        const int row_A = (get_global_id(1) << TILEY_SHIFT);
+        const int nr_rows_A = get_global_size(1);
+        const int nr_cols_A = temp; 
+        int globalPosA = (AInColMajorOrder)?
+                         get_col_major_index(offsetA, row_A, col_A, nr_rows_A, nr_cols_A) :
+                         get_row_major_index(offsetA, row_A, col_A, nr_rows_A, nr_cols_A);
+        
         /* Load values in blockA from matrixA */
         blockA[blockPos] = matrixA[globalPosA];
-        blockA[blockPos + get_local_size(0)] = matrixA[globalPosA + temp];
-        blockA[blockPos + 2 * get_local_size(0)] = matrixA[globalPosA + 2 * temp];
-        blockA[blockPos + 3 * get_local_size(0)] = matrixA[globalPosA + 3 * temp];
+        blockA[blockPos + get_local_size(0)] = matrixA[globalPosA + AIdxMultiplier];
+        blockA[blockPos + 2 * get_local_size(0)] = matrixA[globalPosA + 2 * AIdxMultiplier];
+        blockA[blockPos + 3 * get_local_size(0)] = matrixA[globalPosA + 3 * AIdxMultiplier];
 
         barrier(CLK_LOCAL_MEM_FENCE);
 
         /* Calculate global ids of threads from the particular block to load from matrix B depending on i */
-        int globalPosB = offsetB/4 + get_global_id(0) + ((i * get_local_size(0)) << TILEY_SHIFT) * get_global_size(0);
+        //int globalPosB = offsetB + get_global_id(0) + ((i * get_local_size(0)) << TILEY_SHIFT) * get_global_size(0);
+        const int col_B = get_global_id(0);
+        const int row_B = ((i * get_local_size(0)) << TILEY_SHIFT);
+        const int nr_rows_B = temp;
+        const int nr_cols_B = get_global_size(0); 
+        int globalPosB = (BInColMajorOrder)?
+                         get_col_major_index(offsetB, row_B, col_B, nr_rows_B, nr_cols_B) :
+                         get_row_major_index(offsetB, row_B, col_B, nr_rows_B, nr_cols_B);
 
         /* This loop runs for number of threads in horizontal direction in the block of A */
         for(int j = 0; j < get_local_size(0) * 4; j=j+4)
@@ -86,10 +133,10 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
             float4 tempA3 = blockA[(j >> 2) + (get_local_id(1) * TILEY + 3) * get_local_size(0)];
 
             /* Load corresponding values from matrixB, access pattern = linear from global memory */
-            float4 tempB0 = matrixB[globalPosB  + j *  get_global_size(0)]; //Should be localId.x * (TILEX / 4)
-            float4 tempB1 = matrixB[globalPosB  + (j + 1) * get_global_size(0)];
-            float4 tempB2 = matrixB[globalPosB  + (j + 2) * get_global_size(0)];
-            float4 tempB3 = matrixB[globalPosB  + (j + 3) * get_global_size(0)];
+            float4 tempB0 = matrixB[globalPosB  + j *  BIdxMultiplier]; //Should be localId.x * (TILEX / 4)
+            float4 tempB1 = matrixB[globalPosB  + (j + 1) * BIdxMultiplier];
+            float4 tempB2 = matrixB[globalPosB  + (j + 2) * BIdxMultiplier];
+            float4 tempB3 = matrixB[globalPosB  + (j + 3) * BIdxMultiplier];
     
             sum0.x += tempA0.x * tempB0.x + tempA0.y * tempB1.x + tempA0.z * tempB2.x + tempA0.w * tempB3.x;
             sum0.y += tempA0.x * tempB0.y + tempA0.y * tempB1.y + tempA0.z * tempB2.y + tempA0.w * tempB3.y;
@@ -155,10 +202,10 @@ __kernel void elementWiseSubstractKernel(__global float4 *t,
 {
     int i = get_global_id(0);
     
-    float4 a = t[offset_t/4 + i];
-    float4 b = y[offset_y/4 + i];
+    float4 a = t[offset_t + i];
+    float4 b = y[offset_y + i];
     
-    delta[offset_delta/4 + i] =  a - b;
+    delta[offset_delta + i] =  a - b;
 }
 
 __kernel void elementWiseMultiplicationBySigmoidDerivativeKernel(
@@ -169,16 +216,17 @@ __kernel void elementWiseMultiplicationBySigmoidDerivativeKernel(
 {
     int i = get_global_id(0);
 
-    float4 a = sigmoid_derivative(act[offset_act/4 + i]);
+    float4 a = sigmoid_derivative(act[offset_act + i]);
     
-    del[offset_del/4 + i] *= a;
+    del[offset_del + i] *= a;
 }
 
 
 __kernel void crossEntropyKernelLocal(__global float4* t, 
                                       __global float4* y, 
                                       __global float4* output, 
-                                      __local float4* sdata)
+                                      __local float4* sdata,
+                                      int offset_y)
 {
     // load shared mem
     unsigned int tid = get_local_id(0);
@@ -187,15 +235,19 @@ __kernel void crossEntropyKernelLocal(__global float4* t,
 
     unsigned int localSize = get_local_size(0);
     unsigned int stride = gid * 2;
-    float4 y1 = y[stride];
-	float4 t1 = t[stride];
-	float4 i1 = cross_entropy(t1, y1);
-	float4 y2 = y[stride + 1];
-	float4 t2 = t[stride + 1];
-	float4 i2 = cross_entropy(t2, y2);
-	sdata[tid] = i1 + i2;
+    
+    float4 y1 = y[offset_y + stride];
+    float4 t1 = t[stride];
+    float4 i1 = cross_entropy(t1, y1);
+    
+    float4 y2 = y[offset_y + stride + 1];
+    float4 t2 = t[stride + 1];
+    float4 i2 = cross_entropy(t2, y2);
+    
+    sdata[tid] = i1 + i2;
 
     barrier(CLK_LOCAL_MEM_FENCE);
+    
     // do reduction in shared mem
     for(unsigned int s = localSize >> 1; s > 0; s >>= 1) 
     {

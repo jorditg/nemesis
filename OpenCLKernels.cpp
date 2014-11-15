@@ -82,7 +82,9 @@ void OpenCLKernels::
                                     matrix_cl_float const &B,
                                     matrix_cl_float const &C,
                                     bool setBias,
-                                    bool calcSigmoid) {
+                                    bool calcSigmoid,
+                                    bool AColMajor,
+                                    bool BColMajor) {
     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
                                    size_t(C.rows/4)};
@@ -106,15 +108,19 @@ void OpenCLKernels::
     matrixMultiplicationSigmoidKernel->setArg(1, *(B.data.deviceData));
     matrixMultiplicationSigmoidKernel->setArg(2, *(C.data.deviceData));
     matrixMultiplicationSigmoidKernel->setArg(3, A.cols);
-    matrixMultiplicationSigmoidKernel->setArg(4, A.offset);
-    matrixMultiplicationSigmoidKernel->setArg(5, B.offset);
-    matrixMultiplicationSigmoidKernel->setArg(6, C.offset);
+    matrixMultiplicationSigmoidKernel->setArg(4, A.offset/4);
+    matrixMultiplicationSigmoidKernel->setArg(5, B.offset/4);
+    matrixMultiplicationSigmoidKernel->setArg(6, C.offset/4);
     matrixMultiplicationSigmoidKernel->setArg(7,
           cl::__local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
     matrixMultiplicationSigmoidKernel->setArg(8, setBias?1:0);
     matrixMultiplicationSigmoidKernel->setArg(9,
           calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
-
+    matrixMultiplicationSigmoidKernel->setArg(10,
+          AColMajor?1:0);    // A in column-major order
+    matrixMultiplicationSigmoidKernel->setArg(11,
+          BColMajor?1:0);    // B in column-major order    
+    
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
     // parameters obtained from user
@@ -165,9 +171,9 @@ void OpenCLKernels::runElementWiseSubstract(
     elementWiseSubstractKernel->setArg(0, *(tm.data.deviceData));
     elementWiseSubstractKernel->setArg(1, *(ym.data.deviceData));
     elementWiseSubstractKernel->setArg(2, *(em.data.deviceData));
-    elementWiseSubstractKernel->setArg(3, tm.offset);
-    elementWiseSubstractKernel->setArg(4, ym.offset);
-    elementWiseSubstractKernel->setArg(5, em.offset);
+    elementWiseSubstractKernel->setArg(3, tm.offset/4);
+    elementWiseSubstractKernel->setArg(4, ym.offset/4);
+    elementWiseSubstractKernel->setArg(5, em.offset/4);
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
@@ -204,9 +210,9 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
     elementWiseMultiplicationBySigmoidDerivativeKernel->
         setArg(1, *(activations.data.deviceData));
     elementWiseMultiplicationBySigmoidDerivativeKernel->
-        setArg(2, deltas.offset);
+        setArg(2, deltas.offset/4);
     elementWiseMultiplicationBySigmoidDerivativeKernel->
-        setArg(3, activations.offset);
+        setArg(3, activations.offset/4);
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
@@ -229,9 +235,12 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     const size_t blockSize = 4096;  // float4's
     const size_t data_size_float4_global = y.rows*y.cols/4;
     
+    assert(data_size_float4_global * 4 <= error.data.hostData.size());
+
+    
     size_t global_size[1] = {data_size_float4_global / 2};
     size_t local_size[1] = {std::min(blockSize, global_size[0])};
-
+    
     assert(global_size[0] % local_size[0] == 0);
     
     const size_t error_size = 4 * global_size[0]/local_size[0];
@@ -242,11 +251,12 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     // -----------------------------------------------------------------------
     // Setting kernel arguments
     // -----------------------------------------------------------------------
-    crossEntropyKernelLocal->setArg(0, t.data.deviceData);
-    crossEntropyKernelLocal->setArg(1, y.data.deviceData);
-    crossEntropyKernelLocal->setArg(2, error.data.deviceData);
+    crossEntropyKernelLocal->setArg(0, *(t.data.deviceData));
+    crossEntropyKernelLocal->setArg(1, *(y.data.deviceData));
+    crossEntropyKernelLocal->setArg(2, *(error.data.deviceData));
     crossEntropyKernelLocal->setArg(3,
                            cl::__local(local_size[0] * 4 * sizeof(cl_float)));
+    crossEntropyKernelLocal->setArg(4, y.offset/4);
 
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on

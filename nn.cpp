@@ -33,7 +33,8 @@ nn::nn(const std::string &filename)
                 weights(weights_host),
                 weights_transposed(weights_transposed_host),
                 deltas(deltas_host),
-                t(t_host) {
+                t(t_host),
+                cross_entropy_error(cross_entropy_error_host) {
     
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);  // get available OpenCL platforms
@@ -70,6 +71,7 @@ nn::nn(const std::string &filename)
     // there are no deltas in input layer
     deltas.hostData.resize((numberOfNeurons
                             -elementsPerLayer[0])*numberOfTrainingData);
+    cross_entropy_error.hostData.resize(CROSS_ENTROPY_ERROR_SIZE);
 
     load_csv_vector("weights.txt", weights.hostData);
     
@@ -90,6 +92,7 @@ nn::nn(const std::string &filename)
     activations.writeToDevice(*queue);
     weights.writeToDevice(*queue);
     t.writeToDevice(*queue);
+    cross_entropy_error.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     
     // instantitate kernels
     openclKernels = new OpenCLKernels(*context, devices, 0, *queue);
@@ -220,4 +223,18 @@ void nn::BP() {
         del_r.data.readFromDevice(*queue);
         print(del_r, "delta_r*Wt.*s*(s-1)");
     }
+}
+
+cl_float nn::cross_entropy() {
+    matrix_cl_float tm(t);
+    matrix_cl_float act(activations);
+    matrix_cl_float ce(cross_entropy_error);
+
+    tm.set(numberOfTrainingData, elementsPerLayer[numberOfLayers-1], 0);
+
+    const int offset_act = (numberOfNeurons - elementsPerLayer[numberOfLayers-1])
+                           *numberOfTrainingData;
+    act.set(tm.rows, tm.cols, offset_act);
+
+    return openclKernels->runCrossEntropy(tm, act, ce);
 }

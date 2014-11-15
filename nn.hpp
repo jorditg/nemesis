@@ -14,6 +14,8 @@
 //#include "OpenCLErrorReduce.hpp"
 
 class nn {
+    const size_t CROSS_ENTROPY_ERROR_SIZE = 1024;
+    
     cl_int numberOfNeurons;
     cl_int numberOfWeights;
     cl_int numberOfTrainingData;
@@ -26,12 +28,14 @@ class nn {
     std::vector<cl_float> weights_transposed_host;
     std::vector<cl_float> deltas_host;
     std::vector<cl_float> t_host;
+    std::vector<cl_float> cross_entropy_error_host;
     
     host_device_memory_map<cl_float> activations;  // inputs and calculated activations
     host_device_memory_map<cl_float> weights;  // all the weights of the NN
     host_device_memory_map<cl_float> weights_transposed;  // all the weights of the NN
     host_device_memory_map<cl_float> deltas;   // delta errors (Backprop)
     host_device_memory_map<cl_float> t;        // real output value
+    host_device_memory_map<cl_float> cross_entropy_error;        // real output value
 
     cl::Context *context;   // unique OpenCL context
     std::vector<cl::Device> devices;
@@ -51,6 +55,7 @@ class nn {
     
     
     void FF();
+    cl_float cross_entropy();
     void BP();
     
 
