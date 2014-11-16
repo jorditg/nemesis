@@ -147,7 +147,7 @@ void OpenCLKernels::
     std::cout << "Matmult finished\n";
 }
 
-// NOT TESTED YET
+
 void OpenCLKernels::runElementWiseSubstract(
             matrix_cl_float const &tm,
             matrix_cl_float const &ym,
@@ -227,26 +227,19 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
 
 
 
-// NOT TESTED YET
+
 cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
                                         matrix_cl_float const &y,
                                         matrix_cl_float &error) {
 
     const size_t blockSize = 4096;  // float4's
     const size_t data_size_float4_global = y.rows*y.cols/4;
-    
-    assert(data_size_float4_global * 4 <= error.data.hostData.size());
 
-    
     size_t global_size[1] = {data_size_float4_global / 2};
     size_t local_size[1] = {std::min(blockSize, global_size[0])};
     
+    assert(data_size_float4_global * 4 <= error.data.hostData.size());    
     assert(global_size[0] % local_size[0] == 0);
-    
-    const size_t error_size = 4 * global_size[0]/local_size[0];
-    
-    error.rows = 1;
-    error.cols = error_size;
     
     // -----------------------------------------------------------------------
     // Setting kernel arguments
@@ -279,14 +272,15 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     std::cout << "CE kernel finished\n";
     
     error.data.readFromDevice(queue);
-    
+
+    const size_t error_size = 4 * global_size[0]/local_size[0];
     std::vector<cl_float> & e = error.data.hostData;
     cl_float ce = 0.0;
     for (size_t i = 0; i < error_size; i++) {
         ce += e[i];
     }
     
-    return ce;
+    return -ce;
 }
 
 void OpenCLKernels::runTranspose(matrix_cl_float const &a,

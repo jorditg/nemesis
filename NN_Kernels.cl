@@ -44,9 +44,9 @@ float4 sigmoid_derivative(float4 sigmoid)
   return sigmoid*(sigmoid - 1.0f);
 }
 
-float4 cross_entropy(float4 y, float4 t)
+float4 cross_entropy(float4 t, float4 y)
 {
-    const float4 epsilon = 1E-15;
+    const float4 epsilon = 1E-30;
     return ( t * log(y + epsilon) + (1.0f - t) * log (1.0f - y + epsilon) );
 }
 
@@ -259,7 +259,7 @@ __kernel void crossEntropyKernelLocal(__global float4* t,
     }
 
     // write result for this block to global mem
-    if(tid == 0) output[bid] = - sdata[0];	// cross entropy is the negative sum
+    if(tid == 0) output[bid] = sdata[0];	
 }
 
 // Al finalizar la función se obtiene un vector de output de tamaño igual al número de grupos
