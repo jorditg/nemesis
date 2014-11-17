@@ -7,9 +7,7 @@
 
 #include <string>
 #include <vector>
-
 #include <iostream>
-
 #include <algorithm>    // std::min
 
 #include "NN_Kernels.h"
@@ -84,7 +82,9 @@ void OpenCLKernels::
                                     bool setBias,
                                     bool calcSigmoid,
                                     bool AColMajor,
-                                    bool BColMajor) {
+                                    bool BColMajor,
+                                    bool sumToC,
+                                    cl_float multTheSum) {
     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
                                    size_t(C.rows/4)};
@@ -119,7 +119,11 @@ void OpenCLKernels::
     matrixMultiplicationSigmoidKernel->setArg(10,
           AColMajor?1:0);    // A in column-major order
     matrixMultiplicationSigmoidKernel->setArg(11,
-          BColMajor?1:0);    // B in column-major order    
+          BColMajor?1:0);    // B in column-major order
+    matrixMultiplicationSigmoidKernel->setArg(12,
+          sumToC?1:0);    // Result should be sumed to previous value of C or only assigned
+    matrixMultiplicationSigmoidKernel->setArg(13,
+          multTheSum); // If sumToC== true value that multiplies the result previous to sum
     
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
@@ -225,13 +229,9 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
     queue.finish();
 }
 
-
-
-
 cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
                                         matrix_cl_float const &y,
                                         matrix_cl_float &error) {
-
     const size_t blockSize = 4096;  // float4's
     const size_t data_size_float4_global = y.rows*y.cols/4;
 
@@ -283,6 +283,8 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     return -ce;
 }
 
+
+// NOT TESTED
 void OpenCLKernels::runTranspose(matrix_cl_float const &a,
                                  matrix_cl_float &transpose) {
 

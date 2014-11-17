@@ -221,7 +221,38 @@ void nn::BP() {
 
         print(act, "act");
         del_r.data.readFromDevice(*queue);
-        print(del_r, "delta_r*Wt.*s*(s-1)");
+        print(del_r, "delta_r*Wt.*s*(s-1)");        
+    }
+    
+    // Weight actualization
+    int act.offset = (numberOfNeurons - elementsPerLayer[N])*numberOfTrainingData ;
+    int del.offset = (numberOfNeurons - elementsPerLayer[0])*numberOfTrainingData; 
+    int wei.offset = wei.data.hostData.size();
+    for (int i = N - 1; i > 1; i--) {        
+        wei.data.readFromDevice(*queue);
+        print(wei, "Wei = Wei + 1.0*ActT*delta");
+
+        act.set(elementsPerLayer[i], numberOfTrainingData, 
+                act.offset - elementsPerLayer[i]*numberOfTrainingData);
+        del.set(numberOfTrainingData, elementsPerLayer[i+1],
+                del.offset - elementsPerLayer[i+1]*numberOfTrainingData);
+        wei.set(elementsPerLayer[i], elementsPerLayer[i+1],
+                  wei.offset - elementsPerLayer[i]*elementsPerLayer[i+1]);
+        
+        const bool AColMajor = true;
+        const bool SumToWeights = true;
+        const cl_float weightIncrementMultiplier = 1.0f;
+        openclKernels->
+            runMatrixMultiplicationSigmoid(act, del, wei, false, false, 
+                                           AColMajor, false, SumToWeights, 
+                                           weightIncrementMultiplier);
+
+        act.data.readFromDevice(*queue);
+        del.data.readFromDevice(*queue);
+        wei.data.readFromDevice(*queue);
+        print(act, "Act");
+        print(del, "delta");
+        print(wei, "Wei = Wei + 1.0*ActT*delta");
     }
 }
 

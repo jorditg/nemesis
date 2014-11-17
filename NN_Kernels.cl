@@ -56,7 +56,7 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
                              (__global float4 *matrixA,
                               __global float4 *matrixB,
                               __global float4* matrixC,
-                              int widthA,
+                              int colsA,
                               int offsetA,
                               int offsetB,
                               int offsetC,
@@ -64,7 +64,9 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
                               int setBias,
                               int calcSigmoid,
                               int AInColMajorOrder,
-                              int BInColMajorOrder)
+                              int BInColMajorOrder,
+                              int sumToMatrixC,
+                              cl_float multTheSum)
 {
     int blockPos = get_local_id(0) + get_local_size(0) * (get_local_id(1) << TILEY_SHIFT); //Should be : localId * (TILEX / 4) (float4)
 
@@ -85,7 +87,7 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
     float4 sum2 = (float4)(0);
     float4 sum3 = (float4)(0);
 
-    int temp = widthA / 4;
+    int temp = colsA / 4;
 
     int AIdxMultiplier = (AInColMajorOrder?1:temp);
     int BIdxMultiplier = (BInColMajorOrder?1:get_global_size(0));
@@ -182,10 +184,17 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
     // end of calculation of sigmoid function
     
     /* Write 16 values to matrixC */
-    matrixC[globalPos] = sum0;
-    matrixC[globalPos +  get_global_size(0)] = sum1;
-    matrixC[globalPos +  2 * get_global_size(0)] = sum2;
-    matrixC[globalPos +  3 * get_global_size(0)] = sum3;    
+    if(sumToMatrixC) {
+        matrixC[globalPos] += multTheSum*sum0;
+        matrixC[globalPos +  get_global_size(0)] += multTheSum*sum1;
+        matrixC[globalPos +  2 * get_global_size(0)] += multTheSum*sum2;
+        matrixC[globalPos +  3 * get_global_size(0)] += multTheSum*sum3;    
+    } else {
+        matrixC[globalPos] = sum0;
+        matrixC[globalPos +  get_global_size(0)] = sum1;
+        matrixC[globalPos +  2 * get_global_size(0)] = sum2;
+        matrixC[globalPos +  3 * get_global_size(0)] = sum3;    
+    }
 }
 
 /* Substracts element by element. NDRange of one dimension. 
@@ -199,7 +208,6 @@ __kernel void elementWiseSubstractKernel(__global float4 *t,
                                          int offset_t,
                                          int offset_y,
                                          int offset_delta)
-{
     int i = get_global_id(0);
     
     float4 a = t[offset_t + i];

@@ -39,7 +39,9 @@ class OpenCLKernels {
             bool setBias = true,
             bool calcSigmoid = true,
             bool AColMajor = false,
-            bool BColMajor = false);
+            bool BColMajor = false,
+            bool sumToC = false,
+            cl_float multTheSum = 1.0f);
     
     void runElementWiseSubstract(
             matrix_cl_float const &t,
