@@ -16,10 +16,11 @@ int main(int argc, char** argv) {
     const std::string filename = "data.txt";
 
     nn nn1(filename);
-    nn1.FF();
-    cl_float ce = nn1.cross_entropy();
-    std::cout << "CE: " << ce << std::endl;
-    nn1.BP();
+    // nn1.FF();
+    // cl_float ce = nn1.cross_entropy();
+    // std::cout << "CE: " << ce << std::endl;
+    nn1.test_matrix_multiplication();
+    //nn1.BP();
     
     return 0;
 }

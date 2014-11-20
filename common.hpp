@@ -63,9 +63,9 @@ struct host_device_memory_map {
 template <typename T>
 struct opencl_matrix {
     host_device_memory_map<T> & data;
-    cl_uint rows;
-    cl_uint cols;
-    cl_uint offset;
+    cl_int rows;
+    cl_int cols;
+    cl_int offset;
     
     explicit inline opencl_matrix(host_device_memory_map<T> & d) :
                          data(d), rows(0), cols(0), offset(0) {}
@@ -74,7 +74,7 @@ struct opencl_matrix {
                          data(orig.data), rows(orig.rows),
                          cols(orig.cols), offset(orig.offset) {}
     
-    inline opencl_matrix const & set(cl_uint r, cl_uint c, cl_uint o = 0) {
+    inline opencl_matrix const & set(cl_int r, cl_int c, cl_int o = 0) {
         rows = r;
         cols = c;
         offset = o;
@@ -95,11 +95,13 @@ void load_csv_vector(const std::string & filename,
                      std::vector<cl_float> &weights);
 
 void print_vector(const std::vector<cl_float> & v,
-                  int rows,
-                  int cols,
-                  int offset);
+                  cl_int rows,
+                  cl_int cols,
+                  cl_int offset);
 
-void print(const matrix_cl_float &m, const std::string header = "");
+void print(const matrix_cl_float &m,
+           const std::string header = "",
+           const bool rows2cols = false);
 
 #endif  /* COMMON_HPP */
 

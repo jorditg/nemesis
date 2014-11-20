@@ -92,7 +92,8 @@ nn::nn(const std::string &filename)
     activations.writeToDevice(*queue);
     weights.writeToDevice(*queue);
     t.writeToDevice(*queue);
-    cross_entropy_error.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
+    cross_entropy_error.createBuffer(*context,
+                                     CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     
     // instantitate kernels
     openclKernels = new OpenCLKernels(*context, devices, 0, *queue);
@@ -159,6 +160,86 @@ void nn::FF() {
     print_vector(C.data.hostData, C.rows, C.cols, C.offset);
 }
 
+void nn::test_matrix_multiplication() {
+    matrix_cl_float A(deltas);
+    matrix_cl_float B(activations);
+    matrix_cl_float C(weights);
+    
+    // Test of not transposed matrices ( CHECKED. IT WORKS!)
+    
+    const int nr_rows_A = 12;
+    const int nr_cols_A = 16;
+    
+    const int nr_rows_B = 16;
+    const int nr_cols_B = 8;
+    
+    const int nr_rows_C = nr_rows_A;
+    const int nr_cols_C = nr_cols_B;
+//    
+//    for (int i = 0; i < nr_rows_A; i++) {
+//        for (int j = 0; j < nr_cols_A; j++) {
+//            A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
+//        }
+//    }
+//    
+//    for (int i = 0; i < nr_rows_B; i++) {
+//        for (int j = 0; j < nr_cols_B; j++) {
+//            B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+//        }
+//    }
+//    
+//    A.set(nr_rows_A, nr_cols_A, 0);
+//    B.set(nr_rows_B, nr_cols_B, 0);
+//    C.set(nr_rows_C, nr_cols_C, 0);
+//    
+//    A.data.writeToDevice(*queue);
+//    B.data.writeToDevice(*queue);
+//    
+//    openclKernels->
+//            runMatrixMultiplicationSigmoid(A, B, C,
+//                                           false, false,
+//                                           false, false);
+//    C.data.readFromDevice(*queue);
+//
+//    print(A, "A");
+//    print(B, "B");
+//    print(C, "Not transposed matrices");
+
+    // Test A transposed
+
+    for (int i = 0; i < nr_cols_A; i++) {
+        for (int j = 0; j < nr_rows_A; j++) {
+            A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
+        }
+    }
+    
+    for (int i = 0; i < nr_rows_B; i++) {
+        for (int j = 0; j < nr_cols_B; j++) {
+            B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+        }
+    }
+    
+    A.set(nr_rows_A, nr_cols_A, 0);
+    B.set(nr_rows_B, nr_cols_B, 0);
+    C.set(nr_rows_C, nr_cols_C, 0);
+
+    A.data.writeToDevice(*queue);
+    B.data.writeToDevice(*queue);
+    
+    openclKernels->
+            runMatrixMultiplicationSigmoid(A, B, C,
+                                           false, false,
+                                           true, false);
+    C.data.readFromDevice(*queue);
+
+    print(A, "A", true);
+    print(B, "B");
+    print(C, "Result with A transposed");
+  
+    exit(0);
+    
+}
+
 void nn::BP() {
     const cl_int N = numberOfLayers - 1;
     
@@ -213,7 +294,7 @@ void nn::BP() {
         print(wei_t, "Wt");
         print(del, "delta");
         print(del_r, "delta*Wt");
-
+        
         act.set(numberOfTrainingData, elementsPerLayer[i],
                 act.offset - elementsPerLayer[i]*numberOfTrainingData);
         openclKernels->
@@ -221,30 +302,32 @@ void nn::BP() {
 
         print(act, "act");
         del_r.data.readFromDevice(*queue);
-        print(del_r, "delta_r*Wt.*s*(s-1)");        
+        print(del_r, "delta_r*Wt.*s*(s-1)");
     }
     
     // Weight actualization
-    int act.offset = (numberOfNeurons - elementsPerLayer[N])*numberOfTrainingData ;
-    int del.offset = (numberOfNeurons - elementsPerLayer[0])*numberOfTrainingData; 
-    int wei.offset = wei.data.hostData.size();
-    for (int i = N - 1; i > 1; i--) {        
-        wei.data.readFromDevice(*queue);
-        print(wei, "Wei = Wei + 1.0*ActT*delta");
-
-        act.set(elementsPerLayer[i], numberOfTrainingData, 
+    act.offset = (numberOfNeurons - elementsPerLayer[N])
+                     *numberOfTrainingData;
+    del.offset = (numberOfNeurons - elementsPerLayer[0])
+                     *numberOfTrainingData;
+    wei.offset = wei.data.hostData.size();
+    for (int i = N - 1; i > 1; i--) {
+        act.set(elementsPerLayer[i], numberOfTrainingData,
                 act.offset - elementsPerLayer[i]*numberOfTrainingData);
         del.set(numberOfTrainingData, elementsPerLayer[i+1],
                 del.offset - elementsPerLayer[i+1]*numberOfTrainingData);
         wei.set(elementsPerLayer[i], elementsPerLayer[i+1],
                   wei.offset - elementsPerLayer[i]*elementsPerLayer[i+1]);
-        
+
+        wei.data.readFromDevice(*queue);
+        print(wei, "Wei");
+
         const bool AColMajor = true;
         const bool SumToWeights = true;
         const cl_float weightIncrementMultiplier = 1.0f;
         openclKernels->
-            runMatrixMultiplicationSigmoid(act, del, wei, false, false, 
-                                           AColMajor, false, SumToWeights, 
+            runMatrixMultiplicationSigmoid(act, del, wei, false, false,
+                                           AColMajor, false, SumToWeights,
                                            weightIncrementMultiplier);
 
         act.data.readFromDevice(*queue);
@@ -263,7 +346,8 @@ cl_float nn::cross_entropy() {
 
     tm.set(numberOfTrainingData, elementsPerLayer[numberOfLayers-1], 0);
 
-    const int offset_act = (numberOfNeurons - elementsPerLayer[numberOfLayers-1])
+    const int offset_act = (numberOfNeurons -
+                            elementsPerLayer[numberOfLayers-1])
                            *numberOfTrainingData;
     act.set(tm.rows, tm.cols, offset_act);
 

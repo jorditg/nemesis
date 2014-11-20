@@ -53,6 +53,7 @@ class nn {
     void populate_random_weights(cl_float min, cl_float max);
     void populate_fixed_weights();
     
+    void test_matrix_multiplication();
     
     void FF();
     cl_float cross_entropy();

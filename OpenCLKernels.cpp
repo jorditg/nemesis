@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include <algorithm>    // std::min
+#include <boost/math/common_factor.hpp>
 
 #include "NN_Kernels.h"
 #include "OpenCLKernels.hpp"
@@ -92,8 +92,9 @@ void OpenCLKernels::
     // Proposed block size = 8
     size_t blockSize_r = 8, blockSize_c = 8;
 
-    blockSize_c = std::min(global_size[0], blockSize_c/4);
-    blockSize_r = std::min(global_size[1], blockSize_r/4);
+    // ??¿¿esto creo que no está bien!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    blockSize_c = boost::math::gcd(global_size[0], blockSize_c/4);
+    blockSize_r = boost::math::gcd(global_size[1], blockSize_r/4);
     
     // if global size < block size the reduce block size to global size
     
@@ -112,7 +113,7 @@ void OpenCLKernels::
     matrixMultiplicationSigmoidKernel->setArg(5, B.offset/4);
     matrixMultiplicationSigmoidKernel->setArg(6, C.offset/4);
     matrixMultiplicationSigmoidKernel->setArg(7,
-          cl::__local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
+          cl::Local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
     matrixMultiplicationSigmoidKernel->setArg(8, setBias?1:0);
     matrixMultiplicationSigmoidKernel->setArg(9,
           calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
@@ -248,7 +249,7 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     crossEntropyKernelLocal->setArg(1, *(y.data.deviceData));
     crossEntropyKernelLocal->setArg(2, *(error.data.deviceData));
     crossEntropyKernelLocal->setArg(3,
-                           cl::__local(local_size[0] * 4 * sizeof(cl_float)));
+                           cl::Local(local_size[0] * 4 * sizeof(cl_float)));
     crossEntropyKernelLocal->setArg(4, y.offset/4);
 
     // -----------------------------------------------------------------------
@@ -295,13 +296,13 @@ void OpenCLKernels::runTranspose(matrix_cl_float const &a,
     transposeKernelLocal->setArg(1, a.data.deviceData);
     transposeKernelLocal->setArg(2, a.cols);
     transposeKernelLocal->setArg(3, a.rows);
-    transposeKernelLocal->setArg(4, cl::__local((TRANSPOSE_BLOCK_DIM+1)
+    transposeKernelLocal->setArg(4, cl::Local((TRANSPOSE_BLOCK_DIM+1)
                                                 * TRANSPOSE_BLOCK_DIM
                                                 * sizeof(cl_float)));
     transposeKernelLocal->setArg(5, transpose.offset);
     transposeKernelLocal->setArg(6, a.offset);
 
-    size_t global_size[2] = {a.cols, a.rows};
+    size_t global_size[2] = {size_t(a.cols), size_t(a.rows)};
     size_t local_size[2] = {TRANSPOSE_BLOCK_DIM, TRANSPOSE_BLOCK_DIM };
     
     const cl::NDRange offset = cl::NullRange;

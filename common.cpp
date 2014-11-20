@@ -104,9 +104,9 @@ void load_csv_vector(const std::string & filename,
 
 
 void print_vector(const std::vector<cl_float> &v,
-                  int rows,
-                  int cols,
-                  int offset = 0) {
+                  cl_int rows,
+                  cl_int cols,
+                  cl_int offset = 0) {
   int lines = 0;
   for (size_t i = offset; i < v.size(); i++) {
     std::cout << boost::format("%5.5f") % v[i] << " ";
@@ -118,8 +118,14 @@ void print_vector(const std::vector<cl_float> &v,
   }
 }
 
-void print(const matrix_cl_float &m, const std::string header) {
+void print(const matrix_cl_float &m,
+           const std::string header,
+           const bool rows2cols) {
   if (!header.empty())
     std::cout << header << std::endl;
-  print_vector(m.data.hostData, m.rows, m.cols, m.offset);
+
+  if (!rows2cols)
+    print_vector(m.data.hostData, m.rows, m.cols, m.offset);
+  else
+    print_vector(m.data.hostData, m.cols, m.rows, m.offset);
 }
