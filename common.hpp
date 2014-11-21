@@ -66,6 +66,7 @@ struct opencl_matrix {
     cl_int rows;
     cl_int cols;
     cl_int offset;
+    bool colMajorOrdered = false;   // default is row major
     
     explicit inline opencl_matrix(host_device_memory_map<T> & d) :
                          data(d), rows(0), cols(0), offset(0) {}
@@ -74,10 +75,11 @@ struct opencl_matrix {
                          data(orig.data), rows(orig.rows),
                          cols(orig.cols), offset(orig.offset) {}
     
-    inline opencl_matrix const & set(cl_int r, cl_int c, cl_int o = 0) {
+    inline opencl_matrix const & set(cl_int r, cl_int c, cl_int o = 0, bool matrixInColMajorOrder = false) {
         rows = r;
         cols = c;
         offset = o;
+        colMajorOrdered = matrixInColMajorOrder;
         return *this;
     }
 };

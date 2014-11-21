@@ -89,12 +89,9 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
         const int row_A = get_global_id(1);
         const int nr_rows_A = get_global_size(1);
         const int nr_cols_A = temp; 
-        int globalPosA = (AInColMajorOrder)?
-                         get_index(offsetA, col_A, row_A, nr_rows_A) :
-                         get_index(offsetA, row_A, col_A, nr_cols_A);
         
-
         if(!AInColMajorOrder) {
+          int globalPosA = get_index(offsetA, row_A, col_A, nr_cols_A);
           /* Load values in blockA from matrixA */
           blockA[blockPos] = matrixA[globalPosA];
           blockA[blockPos + get_local_size(0)] = matrixA[globalPosA + nr_cols_A];
@@ -103,7 +100,7 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
         } else {
           // If A is in column major order not only the index calculation is different but the float4xfloat4 block
           // of data has to be transposed
-          
+          int globalPosA = get_index(offsetA, col_A, row_A, nr_rows_A);
           // first of all we load the block to private memory
           float4 v1 = matrixA[globalPosA];
           float4 v2 = matrixA[globalPosA + 1 * nr_rows_A];
@@ -111,10 +108,10 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
           float4 v4 = matrixA[globalPosA + 3 * nr_rows_A];
 
           // now we transpose it and assign it to the block of memory
-          blockA[blockPos] = (v1.x, v2.x, v3.x, v4.x);
-          blockA[blockPos + get_local_size(0)] = (v1.y, v2.y, v3.y, v4.y);
-          blockA[blockPos + 2 * get_local_size(0)] = (v1.z, v2.z, v3.z, v4.z);
-          blockA[blockPos + 3 * get_local_size(0)] = (v1.w, v2.w, v3.w, v4.w);
+          blockA[blockPos] = (float4) (v1.x, v2.x, v3.x, v4.x);
+          blockA[blockPos + get_local_size(0)] = (float4) (v1.y, v2.y, v3.y, v4.y);
+          blockA[blockPos + 2 * get_local_size(0)] = (float4) (v1.z, v2.z, v3.z, v4.z);
+          blockA[blockPos + 3 * get_local_size(0)] = (float4) (v1.w, v2.w, v3.w, v4.w);
 
         }
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -125,9 +122,6 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
         const int row_B = i * get_local_size(0);
         const int nr_rows_B = temp;
         const int nr_cols_B = get_global_size(0); 
-        int globalPosB = (BInColMajorOrder)?
-                         get_index(offsetB, col_B, row_B, nr_rows_B) :
-                         get_index(offsetB, row_B, col_B, nr_cols_B);
 
         /* This loop runs for number of threads in horizontal direction in the block of A */
         for(int j = 0; j < get_local_size(0) * 4; j=j+4)
@@ -145,24 +139,27 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
             float4 tempB3;
 
             if(!BInColMajorOrder) {
+              int globalPosB = get_index(offsetB, row_B, col_B, nr_cols_B);
+
               tempB0 = matrixB[globalPosB  + j *  nr_cols_B]; //Should be localId.x * (TILEX / 4)
               tempB1 = matrixB[globalPosB  + (j + 1) * nr_cols_B];
               tempB2 = matrixB[globalPosB  + (j + 2) * nr_cols_B];
               tempB3 = matrixB[globalPosB  + (j + 3) * nr_cols_B];
             } else {
               // ??¿¿ No está pensado bien que OK
-              
+              int globalPosB = get_index(offsetB, col_B, row_B + (j >> 2), nr_rows_B);
+
               // load block in private memory
-              float4 v1 = matrixB[globalPosB + j * nr_rows_B];
-              float4 v2 = matrixB[globalPosB + (j + 1) * nr_rows_B];
-              float4 v3 = matrixB[globalPosB + (j + 2) * nr_rows_B];
-              float4 v4 = matrixB[globalPosB + (j + 3) * nr_rows_B];
+              float4 v1 = matrixB[globalPosB];
+              float4 v2 = matrixB[globalPosB + 1 * nr_rows_B];
+              float4 v3 = matrixB[globalPosB + 2 * nr_rows_B];
+              float4 v4 = matrixB[globalPosB + 3 * nr_rows_B];
 
               // now we transpose it
-              tempB0 = (v1.x, v2.x, v3.x, v4.x);
-              tempB1 = (v1.y, v2.y, v3.y, v4.y);
-              tempB2 = (v1.z, v2.z, v3.z, v4.z);
-              tempB3 = (v1.w, v2.w, v3.w, v4.w);
+              tempB0 = (float4) (v1.x, v2.x, v3.x, v4.x);
+              tempB1 = (float4) (v1.y, v2.y, v3.y, v4.y);
+              tempB2 = (float4) (v1.z, v2.z, v3.z, v4.z);
+              tempB3 = (float4) (v1.w, v2.w, v3.w, v4.w);
 
             }
             sum0.x += tempA0.x * tempB0.x + tempA0.y * tempB1.x + tempA0.z * tempB2.x + tempA0.w * tempB3.x;
