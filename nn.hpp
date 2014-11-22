@@ -14,7 +14,7 @@
 //#include "OpenCLErrorReduce.hpp"
 
 class nn {
-    const size_t CROSS_ENTROPY_ERROR_SIZE = 1024;
+    const size_t CROSS_ENTROPY_ERROR_SIZE = 32768;
     
     cl_int numberOfNeurons;
     cl_int numberOfWeights;
@@ -25,14 +25,14 @@ class nn {
     
     std::vector<cl_float> activations_host;
     std::vector<cl_float> weights_host;
-    std::vector<cl_float> weights_transposed_host;
+//    std::vector<cl_float> weights_transposed_host;
     std::vector<cl_float> deltas_host;
     std::vector<cl_float> t_host;
     std::vector<cl_float> cross_entropy_error_host;
     
     host_device_memory_map<cl_float> activations;  // inputs and calculated activations
     host_device_memory_map<cl_float> weights;  // all the weights of the NN
-    host_device_memory_map<cl_float> weights_transposed;  // all the weights of the NN
+//    host_device_memory_map<cl_float> weights_transposed;  // all the weights of the NN
     host_device_memory_map<cl_float> deltas;   // delta errors (Backprop)
     host_device_memory_map<cl_float> t;        // real output value
     host_device_memory_map<cl_float> cross_entropy_error;        // real output value
@@ -43,7 +43,34 @@ class nn {
 
     OpenCLKernels *openclKernels;
 
-    void transposeWeights();
+    cl_float learningRate = 0.3f;
+    
+    
+    inline cl_int get_weights_matrix_offset(cl_int layer) {
+        cl_int offset = 0;
+        for(int i = 0; i < layer; i++)
+            offset += elementsPerLayer[i]*elementsPerLayer[i+1];
+        return offset;
+    }
+    
+    inline cl_int get_activations_matrix_offset(cl_int layer) {
+        cl_int offset = 0;
+        for(int i = 0; i < layer; i++) 
+            offset += elementsPerLayer[i];        
+        offset *= numberOfTrainingData;        
+        return offset;
+    }
+    
+    inline cl_int get_deltas_matrix_offset(cl_int layer) {
+        assert(layer > 0);
+        cl_int offset = 0;
+        for(int i = 1; i < layer; i++) 
+            offset += elementsPerLayer[i];        
+        offset *= numberOfTrainingData;        
+        return offset;        
+    }
+    
+//    void transposeWeights();
     
  public:
     
@@ -63,7 +90,6 @@ class nn {
     cl_float cross_entropy();
     void BP();
     
-
 };
 
 #endif

@@ -51,9 +51,9 @@ class OpenCLKernels {
             matrix_cl_float const &y,
             matrix_cl_float &error);
     
-    void runTranspose(
-            matrix_cl_float const &a,
-            matrix_cl_float &transpose);
+//    void runTranspose(
+//            matrix_cl_float const &a,
+//            matrix_cl_float &transpose);
     
     void runElementWiseMultiplicationBySigmoidDerivativeKernel(
             matrix_cl_float const &deltas,
@@ -82,9 +82,9 @@ class OpenCLKernels {
     const std::string crossEntropyKernelLocal_name =
                       "crossEntropyKernelLocal";
     
-    cl::Kernel *transposeKernelLocal;
-    const std::string transposeKernelLocal_name =
-                      "transpose";
+//    cl::Kernel *transposeKernelLocal;
+//    const std::string transposeKernelLocal_name =
+//                      "transpose";
     
     cl::Kernel *elementWiseMultiplicationBySigmoidDerivativeKernel;
     const std::string elementWiseMultiplicationBySigmoidDerivativeKernel_name =

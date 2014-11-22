@@ -16,7 +16,7 @@
 
 OpenCLKernels::~OpenCLKernels() {
     delete elementWiseMultiplicationBySigmoidDerivativeKernel;
-    delete transposeKernelLocal;
+//    delete transposeKernelLocal;
     delete crossEntropyKernelLocal;
     delete elementWiseSubstractKernel;
     delete matrixMultiplicationSigmoidKernel;
@@ -62,9 +62,9 @@ void OpenCLKernels::opencl_init() {
             new cl::Kernel(*program,
                            crossEntropyKernelLocal_name.c_str());
 
-      transposeKernelLocal =
-            new cl::Kernel(*program,
-                           transposeKernelLocal_name.c_str());
+//      transposeKernelLocal =
+//            new cl::Kernel(*program,
+//                           transposeKernelLocal_name.c_str());
       
       elementWiseMultiplicationBySigmoidDerivativeKernel =
             new cl::Kernel(*program,
@@ -134,11 +134,11 @@ void OpenCLKernels::
     // how work is devided among work-groups and work-items.
     // -----------------------------------------------------------------------
   
-    std::cout << "Launching for device\n"
-              << " (global size: " << global_size[0]
-              << ", "  << global_size[1] << ")\n"
-              << " (local size: " << local_size[0]
-              << ", "  << local_size[1] << ")\n";
+//    std::cout << "Launching for device\n"
+//              << " (global size: " << global_size[0]
+//              << ", "  << global_size[1] << ")\n"
+//              << " (local size: " << local_size[0]
+//              << ", "  << local_size[1] << ")\n";
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0], global_size[1]);
@@ -149,7 +149,7 @@ void OpenCLKernels::
                                local);
     queue.finish();
 
-    std::cout << "Matmult finished\n";
+//    std::cout << "Matmult finished\n";
 }
 
 
@@ -165,13 +165,13 @@ void OpenCLKernels::runElementWiseSubstract(
     const size_t data_size_float4_global = ym.rows*ym.cols/4;
     
     size_t global_size[1] = {data_size_float4_global};
-    size_t local_size[1] = {std::min(blockSize, global_size[0])};
+    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
     assert(global_size[0] % local_size[0] == 0);
     
-    std::cout << "Launching for device\n"
-              << " (global size: " << global_size[0] << ")\n"
-              << " ( local size: " << local_size[0] << ")\n";
+//    std::cout << "Launching for device\n"
+//              << " (global size: " << global_size[0] << ")\n"
+//              << " ( local size: " << local_size[0] << ")\n";
 
     elementWiseSubstractKernel->setArg(0, *(tm.data.deviceData));
     elementWiseSubstractKernel->setArg(1, *(ym.data.deviceData));
@@ -202,13 +202,13 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
     const size_t data_size_float4_global = deltas.rows*deltas.cols/4;
     
     size_t global_size[1] = {data_size_float4_global};
-    size_t local_size[1] = {std::min(blockSize, global_size[0])};
+    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
     assert(global_size[0] % local_size[0] == 0);
     
-    std::cout << "Launching for device\n"
-              << " (global size: " << global_size[0] << ")\n"
-              << " ( local size: " << local_size[0] << ")\n";
+//    std::cout << "Launching for device\n"
+//              << " (global size: " << global_size[0] << ")\n"
+//              << " ( local size: " << local_size[0] << ")\n";
 
     elementWiseMultiplicationBySigmoidDerivativeKernel->
         setArg(0, *(deltas.data.deviceData));
@@ -233,11 +233,11 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
 cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
                                         matrix_cl_float const &y,
                                         matrix_cl_float &error) {
-    const size_t blockSize = 4096;  // float4's
+    const size_t blockSize = 2048;  // float4's
     const size_t data_size_float4_global = y.rows*y.cols/4;
 
     size_t global_size[1] = {data_size_float4_global / 2};
-    size_t local_size[1] = {std::min(blockSize, global_size[0])};
+    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
     assert(data_size_float4_global * 4 <= error.data.hostData.size());    
     assert(global_size[0] % local_size[0] == 0);
@@ -260,9 +260,9 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     // how work is devided among work-groups and work-items.
     // -----------------------------------------------------------------------
   
-    std::cout << "Launching for device\n"
-            << " (global size: " << global_size[0] << ")\n"
-            << " (local size: " << local_size[0] << ")\n";
+//    std::cout << "Launching for device\n"
+//            << " (global size: " << global_size[0] << ")\n"
+//            << " (local size: " << local_size[0] << ")\n";
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
@@ -270,7 +270,7 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     queue.enqueueNDRangeKernel(*crossEntropyKernelLocal, offset, global, local);
     queue.finish();
 
-    std::cout << "CE kernel finished\n";
+    //std::cout << "CE kernel finished\n";
     
     error.data.readFromDevice(queue);
 
@@ -281,33 +281,33 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
         ce += e[i];
     }
     
-    return -ce;
+    return -ce/(y.rows*y.cols);
 }
 
 
-// NOT TESTED
-void OpenCLKernels::runTranspose(matrix_cl_float const &a,
-                                 matrix_cl_float &transpose) {
-
-    // -----------------------------------------------------------------------
-    // Setting kernel arguments
-    // -----------------------------------------------------------------------
-    transposeKernelLocal->setArg(0, transpose.data.deviceData);
-    transposeKernelLocal->setArg(1, a.data.deviceData);
-    transposeKernelLocal->setArg(2, a.cols);
-    transposeKernelLocal->setArg(3, a.rows);
-    transposeKernelLocal->setArg(4, cl::Local((TRANSPOSE_BLOCK_DIM+1)
-                                                * TRANSPOSE_BLOCK_DIM
-                                                * sizeof(cl_float)));
-    transposeKernelLocal->setArg(5, transpose.offset);
-    transposeKernelLocal->setArg(6, a.offset);
-
-    size_t global_size[2] = {size_t(a.cols), size_t(a.rows)};
-    size_t local_size[2] = {TRANSPOSE_BLOCK_DIM, TRANSPOSE_BLOCK_DIM };
-    
-    const cl::NDRange offset = cl::NullRange;
-    const cl::NDRange global(global_size[0], global_size[1]);
-    const cl::NDRange local(local_size[0], local_size[1]);
-    queue.enqueueNDRangeKernel(*transposeKernelLocal, offset, global, local);
-    queue.finish();
-}
+//// NOT TESTED
+//void OpenCLKernels::runTranspose(matrix_cl_float const &a,
+//                                 matrix_cl_float &transpose) {
+//
+//    // -----------------------------------------------------------------------
+//    // Setting kernel arguments
+//    // -----------------------------------------------------------------------
+//    transposeKernelLocal->setArg(0, transpose.data.deviceData);
+//    transposeKernelLocal->setArg(1, a.data.deviceData);
+//    transposeKernelLocal->setArg(2, a.cols);
+//    transposeKernelLocal->setArg(3, a.rows);
+//    transposeKernelLocal->setArg(4, cl::Local((TRANSPOSE_BLOCK_DIM+1)
+//                                                * TRANSPOSE_BLOCK_DIM
+//                                                * sizeof(cl_float)));
+//    transposeKernelLocal->setArg(5, transpose.offset);
+//    transposeKernelLocal->setArg(6, a.offset);
+//
+//    size_t global_size[2] = {size_t(a.cols), size_t(a.rows)};
+//    size_t local_size[2] = {TRANSPOSE_BLOCK_DIM, TRANSPOSE_BLOCK_DIM };
+//    
+//    const cl::NDRange offset = cl::NullRange;
+//    const cl::NDRange global(global_size[0], global_size[1]);
+//    const cl::NDRange local(local_size[0], local_size[1]);
+//    queue.enqueueNDRangeKernel(*transposeKernelLocal, offset, global, local);
+//    queue.finish();
+//}
