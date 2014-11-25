@@ -67,6 +67,7 @@ nn::nn(const std::string &filename)
     
     activations.hostData.resize(numberOfNeurons*numberOfTrainingData);
     weights.hostData.resize(numberOfWeights);
+    increment_weights.hostData.resize(numberOfWeights);
     //weights_transposed.hostData.resize(numberOfWeights);
     // there are no deltas in input layer
     deltas.hostData.resize((numberOfNeurons
@@ -102,6 +103,7 @@ nn::nn(const std::string &filename)
     // Create buffers and copy host contents
     activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
+    increment_weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
 //    weights_transposed.createBuffer(*context,
 //                                    CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     deltas.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
@@ -178,6 +180,7 @@ void nn::BP() {
     matrix_cl_float tm(t);
     matrix_cl_float act(activations);
     matrix_cl_float wei(weights);
+    matrix_cl_float wei_inc(increment_weights);
     matrix_cl_float del(deltas);
     matrix_cl_float del_r(deltas);
 
@@ -233,22 +236,28 @@ void nn::BP() {
                 deltas_offsets[i+1]);
         wei.set(elementsPerLayer[i], elementsPerLayer[i+1],
                 weights_offsets[i]);
+        wei_inc.set(elementsPerLayer[i], elementsPerLayer[i+1],
+                    weights_offsets[i]);
+        
 
         //wei.data.readFromDevice(*queue);
         //print(wei, "Wei");
 
-        const bool SumToWeights = true;
-        const cl_float weightIncrementMultiplier =
+        const bool sum = true;
+        const cl_float learningRateOverTrainingData =
                        learningRate/cl_float(numberOfTrainingData);
         
         openclKernels->runMatrixMultiplicationSigmoid(
                             act,
                             del,
-                            wei,
+                            wei_inc,
                             false,
                             false,
-                            SumToWeights,
-                            weightIncrementMultiplier);
+                            sum,
+                            momentum,
+                            learningRateOverTrainingData);
+        
+        openclKernels->runElementWiseSum(wei, wei_inc, wei);
 
         //act.data.readFromDevice(*queue);
         //del.data.readFromDevice(*queue);

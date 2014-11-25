@@ -39,12 +39,19 @@ class OpenCLKernels {
             bool setBias = true,
             bool calcSigmoid = true,
             bool sumToC = false,
-            cl_float multTheSum = 1.0f);
+            cl_float multPrevVal = 1.0f,
+            cl_float multSum = 1.0f);
     
     void runElementWiseSubstract(
             matrix_cl_float const &t,
             matrix_cl_float const &y,
             matrix_cl_float &e);
+    
+    void runElementWiseSum(
+            matrix_cl_float const &t,
+            matrix_cl_float const &y,
+            matrix_cl_float &e);
+    
     
     cl_float runCrossEntropy(
             matrix_cl_float const &t,
@@ -77,6 +84,10 @@ class OpenCLKernels {
     cl::Kernel *elementWiseSubstractKernel;
     const std::string elementWiseSubstractKernel_name =
                       "elementWiseSubstractKernel";
+    
+    cl::Kernel *elementWiseSumKernel;
+    const std::string elementWiseSumKernel_name =
+                      "elementWiseSumKernel";
     
     cl::Kernel *crossEntropyKernelLocal;
     const std::string crossEntropyKernelLocal_name =

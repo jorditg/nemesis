@@ -1,4 +1,3 @@
-// Copyright 2014 <Jordi de la Torre>
 
 #ifndef NN_HPP_
 #define NN_HPP__
@@ -14,23 +13,25 @@
 #include "OpenCLKernels.hpp"
 
 class nn {
-    const size_t CROSS_ENTROPY_ERROR_SIZE = 32768;
+    const cl_uint CROSS_ENTROPY_ERROR_SIZE = 32768;
     
     cl_uint numberOfNeurons;
     cl_uint numberOfWeights;
     cl_uint numberOfTrainingData;
     cl_uint numberOfLayers;
 
-    cl_float learningRate = 0.11f; // Tyìcal value 0.3
-    size_t maxEpochs = 100000;    // Typical value 5000000
-    cl_float minError = 0.01;   // Typical value 0.01
+    cl_float learningRate = 0.11f;  // Typìcal value 0.3
+    cl_float momentum = 0.9f;       // Typical value 0.9
+    size_t maxEpochs = 100000;      // Typical value 5000000
+    cl_float minError = 0.01;       // Typical value 0.01
 
-    size_t printEpochs = 100;    // Typical value 1000
+    size_t printEpochs = 100;       // Typical value 1000
     
     std::vector<cl_uint> elementsPerLayer;
     
     std::vector<cl_float> activations_host;
     std::vector<cl_float> weights_host;
+    std::vector<cl_float> increment_weights_host;
 //    std::vector<cl_float> weights_transposed_host;
     std::vector<cl_float> deltas_host;
     std::vector<cl_float> t_host;
@@ -43,6 +44,7 @@ class nn {
     host_device_memory_map<cl_float> activations;
     // inputs and calculated activations
     host_device_memory_map<cl_float> weights;  // all the weights of the NN
+    host_device_memory_map<cl_float> increment_weights;  // all the weights of the NN
 //    host_device_memory_map<cl_float> weights_transposed;  // all the weights of the NN
     host_device_memory_map<cl_float> deltas;   // delta errors (Backprop)
     host_device_memory_map<cl_float> t;        // real output value

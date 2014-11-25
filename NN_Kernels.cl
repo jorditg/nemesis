@@ -58,7 +58,8 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
                               int AInColMajorOrder,
                               int BInColMajorOrder,
                               int sumToMatrixC,
-                              float multTheSum)
+                              float multPrevVal,
+                              float multSum)
 {
     //int blockPos = get_local_id(0) + get_local_size(0) * (get_local_id(1) << TILEY_SHIFT); //Should be : localId * (TILEX / 4) (float4)
     int blockPos = get_index(0, get_local_size(0), get_local_id(0), get_local_id(1));
@@ -207,10 +208,15 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
     
     /* Write 16 values to matrixC */
     if(sumToMatrixC) {
-        matrixC[globalPos] += multTheSum*sum0;
-        matrixC[globalPos +  get_global_size(0)] += multTheSum*sum1;
-        matrixC[globalPos +  2 * get_global_size(0)] += multTheSum*sum2;
-        matrixC[globalPos +  3 * get_global_size(0)] += multTheSum*sum3;    
+        const float4 a = matrixC[globalPos] * multPrevVal;
+        const float4 b = matrixC[globalPos +  get_global_size(0)] * multPrevVal;
+        const float4 c = matrixC[globalPos +  2 * get_global_size(0)] * multPrevVal;
+        const float4 d = matrixC[globalPos +  3 * get_global_size(0)] * multPrevVal;  
+
+        matrixC[globalPos] = a + multSum*sum0;
+        matrixC[globalPos +  get_global_size(0)] = b + multSum*sum1;
+        matrixC[globalPos +  2 * get_global_size(0)] = c + multSum*sum2;
+        matrixC[globalPos +  3 * get_global_size(0)] = d + multSum*sum3;    
     } else {
         matrixC[globalPos] = sum0;
         matrixC[globalPos +  get_global_size(0)] = sum1;
@@ -238,6 +244,27 @@ __kernel void elementWiseSubstractKernel(__global float4 *t,
     
     delta[offset_delta + i] =  a - b;
 }
+
+/* Adds element by element. NDRange of one dimension. 
+ * Take care that every element is a float4 element.
+ * The dimension should be the total number of elements divided by 4
+ * This function is used to calculate the deltas of the output layer.
+ */
+__kernel void elementWiseSumKernel(__global float4* t,
+                                   __global float4* y,
+                                   __global float4* delta,
+                                   int offset_t,
+                                   int offset_y,
+                                   int offset_delta)
+{
+    int i = get_global_id(0);
+    
+    float4 a = t[offset_t + i];
+    float4 b = y[offset_y + i];
+    
+    delta[offset_delta + i] =  a + b;
+}
+
 
 __kernel void elementWiseMultiplicationBySigmoidDerivativeKernel(
                                          __global float4 *del,
@@ -335,3 +362,34 @@ __kernel void crossEntropyKernelLocal(__global float4* t,
 //		odata[index_out] = block[get_local_id(0)*(TRANSPOSE_BLOCK_DIM+1)+get_local_id(1)];
 //	}
 //}
+
+/* 
+   Returns a list of random indexes with possibility of repetition between 
+   0 and max_val. The first time is called the vectors seed_x, seed_y,
+   seed_z, seed_w have to be filled with NON REPEATED random elements
+   (all seeds different). Global range is 1D.
+   This algorithm has a maximal period of 2^128 − 1[4] 
+   and passes the diehard tests. 
+   However, it fails the MatrixRank and LinearComp tests of the BigCrush 
+   test suite from the TestU01 framework.
+ */
+__kernel void random_xorshift128(unsigned int4 * index,
+                                 unsigned int max_val,
+                                 unsigned int4 * seed_x,
+                                 unsigned int4 * seed_y,
+                                 unsigned int4 * seed_z,
+                                 unsigned int4 * seed_w) 
+{
+    int i = get_global_id(0);
+
+    unsigned int t = seed_x[i] ^ (seed_x[i] << 11);
+    unsigned int w = seed_w[i];
+    unsigned val = w ^ (w >> 19) ^ t ^ (t >> 8);
+
+    seed_x[i] = seed_y[i]; 
+    seed_y[i] = seed_z[i]; 
+    seed_z[i] = seed_w[i];    
+    seed_w[i] = val;
+
+    return val % max_val;
+}

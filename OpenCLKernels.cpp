@@ -58,6 +58,11 @@ void OpenCLKernels::opencl_init() {
       elementWiseSubstractKernel =
             new cl::Kernel(*program,
                            elementWiseSubstractKernel_name.c_str());
+
+      elementWiseSumKernel =
+            new cl::Kernel(*program,
+                           elementWiseSumKernel_name.c_str());
+            
       crossEntropyKernelLocal =
             new cl::Kernel(*program,
                            crossEntropyKernelLocal_name.c_str());
@@ -82,7 +87,8 @@ void OpenCLKernels::
                                     bool setBias,
                                     bool calcSigmoid,
                                     bool sumToC,
-                                    cl_float multTheSum) {
+                                    cl_float multPrevVal,
+                                    cl_float multSum) {
     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
                                    size_t(C.rows/4)};
@@ -124,7 +130,9 @@ void OpenCLKernels::
     matrixMultiplicationSigmoidKernel->setArg(12,
           sumToC?1:0);    // Result should be sumed to previous value of C or only assigned
     matrixMultiplicationSigmoidKernel->setArg(13,
-          multTheSum); // If sumToC== true value that multiplies the result previous to sum
+          multPrevVal); // If sumToC== true value that multiplies the result previous to sum
+    matrixMultiplicationSigmoidKernel->setArg(14,
+          multSum); // If sumToC== true value that multiplies the result previous to sum
     
     // -----------------------------------------------------------------------
     // Define ndrange iteration space: global and local sizes based on
@@ -184,6 +192,43 @@ void OpenCLKernels::runElementWiseSubstract(
     const cl::NDRange global(global_size[0]);
     const cl::NDRange local(local_size[0]);
     queue.enqueueNDRangeKernel(*elementWiseSubstractKernel,
+                               offset,
+                               global,
+                               local);
+    queue.finish();
+}
+
+void OpenCLKernels::runElementWiseSum(
+            matrix_cl_float const &a,
+            matrix_cl_float const &b,
+            matrix_cl_float &c) {
+
+    assert(a.cols == b.cols && a.rows == b.rows &&
+           a.cols == c.cols && a.rows == c.rows);
+    
+    const size_t blockSize = 512;  // float4's
+    const size_t data_size_float4_global = b.rows*b.cols/4;
+    
+    size_t global_size[1] = {data_size_float4_global};
+    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
+    
+    assert(global_size[0] % local_size[0] == 0);
+    
+//    std::cout << "Launching for device\n"
+//              << " (global size: " << global_size[0] << ")\n"
+//              << " ( local size: " << local_size[0] << ")\n";
+
+    elementWiseSumKernel->setArg(0, *(a.data.deviceData));
+    elementWiseSumKernel->setArg(1, *(b.data.deviceData));
+    elementWiseSumKernel->setArg(2, *(c.data.deviceData));
+    elementWiseSumKernel->setArg(3, a.offset/4);
+    elementWiseSummKernel->setArg(4, b.offset/4);
+    elementWiseSumKernel->setArg(5, c.offset/4);
+    
+    const cl::NDRange offset = cl::NullRange;
+    const cl::NDRange global(global_size[0]);
+    const cl::NDRange local(local_size[0]);
+    queue.enqueueNDRangeKernel(*elementWiseSumKernel,
                                offset,
                                global,
                                local);
