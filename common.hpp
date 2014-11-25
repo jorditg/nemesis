@@ -26,7 +26,7 @@ struct host_device_memory_map {
   explicit inline host_device_memory_map(std::vector<T> & v) : hostData(v) {}
   
   inline host_device_memory_map(const host_device_memory_map<T> & orig) :
-                                hostData(orig.hostData), 
+                                hostData(orig.hostData),
                                 deviceData(orig.deviceData) {}
 
   inline void createBuffer(const cl::Context & context,
@@ -63,9 +63,9 @@ struct host_device_memory_map {
 template <typename T>
 struct opencl_matrix {
     host_device_memory_map<T> & data;
-    cl_int rows;
-    cl_int cols;
-    cl_int offset;
+    cl_uint rows;
+    cl_uint cols;
+    cl_uint offset;
     bool colMajorOrdered = false;   // default is row major
     
     explicit inline opencl_matrix(host_device_memory_map<T> & d) :
@@ -75,7 +75,10 @@ struct opencl_matrix {
                          data(orig.data), rows(orig.rows),
                          cols(orig.cols), offset(orig.offset) {}
     
-    inline opencl_matrix const & set(cl_int r, cl_int c, cl_int o = 0, bool matrixInColMajorOrder = false) {
+    inline opencl_matrix const & set(cl_uint r,
+                                     cl_uint c,
+                                     cl_uint o = 0,
+                                     bool matrixInColMajorOrder = false) {
         rows = r;
         cols = c;
         offset = o;
@@ -89,17 +92,20 @@ typedef opencl_matrix<cl_float> matrix_cl_float;
 void load_csv_data(const std::string & filename,
                    std::vector<cl_float> & input,
                    std::vector<cl_float> & output,
-                   cl_int &rows,
-                   cl_int &layers,
-                   std::vector<cl_int> &elements);
+                   cl_uint &rows,
+                   cl_uint &layers,
+                   std::vector<cl_uint> &elements);
 
 void load_csv_vector(const std::string & filename,
                      std::vector<cl_float> &weights);
 
+void save_csv_vector(const std::string & filename,
+                     std::vector<cl_float> &weights);
+
 void print_vector(const std::vector<cl_float> & v,
-                  cl_int rows,
-                  cl_int cols,
-                  cl_int offset);
+                  cl_uint rows,
+                  cl_uint cols,
+                  cl_uint offset);
 
 void print(const matrix_cl_float &m,
            const std::string header = "",

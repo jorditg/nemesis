@@ -1,16 +1,16 @@
-#include "common.hpp"
-
 #include <string>
 #include <vector>
+
+#include "common.hpp"
 
 typedef boost::tokenizer< boost::escaped_list_separator<char> > Tokenizer;
 
 void load_csv_data(const std::string & filename,
                    std::vector<cl_float> & input,
                    std::vector<cl_float> & output,
-                   cl_int &rows,
-                   cl_int &layers,
-                   std::vector<cl_int> &elements) {
+                   cl_uint &rows,
+                   cl_uint &layers,
+                   std::vector<cl_uint> &elements) {
     
     std::ifstream in(filename.c_str());
     if (!in.is_open()) {
@@ -31,17 +31,20 @@ void load_csv_data(const std::string & filename,
     vec.assign(tok.begin(), tok.end());
 
     layers = 0;
+    // Num.ofelem. includes the BIAS neuron for every layer except the last one
     for (std::vector<std::string>::iterator it = vec.begin() ;
          it != vec.end(); ++it) {
-        elements.push_back(std::stoi(*it) + 1 /* bias element */);
+        cl_uint elem = std::stoi(*it);
+        // check that every layer has a -multiple of 4- number of elements
+        assert(elem % 4 == 0);
+        elements.push_back(elem);
         layers++;
     }
-    elements[elements.size()-1]--;  // output elements doesn't have bias
-
-    const cl_int cols = elements[0] + elements[elements.size()-1];
-    // cols to read = number of inputs + 1 (bias) + number of outputs
-
-    cl_int n = 0;
+    
+    // cols to read = number of inputs - 1 (bias) + number of outputs
+    const cl_uint cols = elements[0] + elements[elements.size()-1];
+    
+    cl_uint n = 0;
     while (getline(in, line)) {
         line = "1," + line;     // Insert the bias element not present in file
         Tokenizer tok(line);
@@ -54,7 +57,7 @@ void load_csv_data(const std::string & filename,
         // check that there is not incomplete data
         assert(vec.size() == size_t(cols));
 
-        cl_int i = 0;
+        cl_uint i = 0;
         for (std::vector<std::string>::iterator it = vec.begin();
              it != vec.end(); ++it) {
             if (i < elements[0]) input.push_back(std::stof(*it));
@@ -103,11 +106,28 @@ void load_csv_vector(const std::string & filename,
 }
 
 
+void save_csv_vector(const std::string & filename,
+                     std::vector<cl_float> &weights) {
+    
+    std::ofstream out(filename.c_str());
+    if (!out.is_open()) {
+        std::cout << "File already opened. Exiting\n";
+        exit(1);
+    }
+
+    if(weights.size() > 0) out << weights[0];
+    for (size_t i = 0; i < weights.size(); i++) {
+        out << "," << weights[i];
+    }
+    out << std::endl;
+}
+
+
 void print_vector(const std::vector<cl_float> &v,
-                  cl_int rows,
-                  cl_int cols,
-                  cl_int offset = 0) {
-  int lines = 0;
+                  cl_uint rows,
+                  cl_uint cols,
+                  cl_uint offset = 0) {
+  cl_uint lines = 0;
   for (size_t i = offset; i < v.size(); i++) {
     std::cout << boost::format("%5.5f") % v[i] << " ";
     if (!((i+1 - offset) % cols)) {

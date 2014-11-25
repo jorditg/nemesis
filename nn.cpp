@@ -31,7 +31,7 @@ void nn::populate_fixed_weights() {
 nn::nn(const std::string &filename)
               : activations(activations_host),
                 weights(weights_host),
-                //weights_transposed(weights_transposed_host),
+                //  weights_transposed(weights_transposed_host),
                 deltas(deltas_host),
                 t(t_host),
                 cross_entropy_error(cross_entropy_error_host) {
@@ -59,7 +59,7 @@ nn::nn(const std::string &filename)
     // host memory allocation for neural network
     numberOfWeights = 0;
     numberOfNeurons = 0;
-    for ( int i = 0; i < numberOfLayers-1; i++ ) {
+    for ( cl_uint i = 0; i < numberOfLayers-1; i++ ) {
         numberOfWeights += elementsPerLayer[i]*elementsPerLayer[i+1];
         numberOfNeurons += elementsPerLayer[i];
     }
@@ -73,8 +73,26 @@ nn::nn(const std::string &filename)
                             -elementsPerLayer[0])*numberOfTrainingData);
     cross_entropy_error.hostData.resize(CROSS_ENTROPY_ERROR_SIZE);
 
+    // calculate offsets of every layer inside the vectors
+    activations_offsets.resize(numberOfLayers);
+    deltas_offsets.resize(numberOfLayers);
+    weights_offsets.resize(numberOfLayers-1);
+    activations_offsets[0] = 0;
+    weights_offsets[0] = 0;
+    deltas_offsets[0] = 0;   // never used in the algorithm
+    deltas_offsets[1] = 0;
+    for (cl_uint i = 1; i < numberOfLayers; i++) {
+      activations_offsets[i] = activations_offsets[i-1] +
+                               numberOfTrainingData*elementsPerLayer[i-1];
+      weights_offsets[i] = weights_offsets[i-1] +
+                           elementsPerLayer[i-1]*elementsPerLayer[i];
+      deltas_offsets[i] = activations_offsets[i] - activations_offsets[1];
+    }
+    
     //load_csv_vector("weights.txt", weights.hostData);
-    populate_random_weights(0.0001, 0.002);
+    populate_random_weights(0.00001, 0.00009);
+
+
     // device memory allocation
     // Create OpenCL buffers for the matrices based on allocated memory regions
     // Create buffers with CL_MEM_USE_HOST_PTR to minimize copying and
@@ -126,7 +144,7 @@ nn::~nn() {
 //}
 
 void nn::FF() {
-    const cl_int N = numberOfLayers - 1;
+    const cl_uint N = numberOfLayers - 1;
     
     matrix_cl_float A(activations);
     matrix_cl_float B(weights);
@@ -136,7 +154,7 @@ void nn::FF() {
     A.rows = numberOfTrainingData;
     B.offset = 0;
     C.offset = elementsPerLayer[0]*numberOfTrainingData;
-    for ( cl_int i = 0; i < N; i++ ) {
+    for ( cl_uint i = 0; i < N; i++ ) {
         A.cols = elementsPerLayer[i];
         B.rows = A.cols;
         B.cols = elementsPerLayer[i+1];
@@ -157,8 +175,6 @@ void nn::FF() {
 }
 
 void nn::BP() {
-    const cl_int N = numberOfLayers - 1;
-    
     matrix_cl_float tm(t);
     matrix_cl_float act(activations);
     matrix_cl_float wei(weights);
@@ -166,29 +182,27 @@ void nn::BP() {
     matrix_cl_float del_r(deltas);
 
     // first of all calculate the deltas of the last layer
-    tm.set(numberOfTrainingData, 
-           elementsPerLayer[N], 
-           0);
-    act.set(tm.rows, 
-            tm.cols, 
-            get_activations_matrix_offset(N));
-    del_r.set(numberOfTrainingData, 
-              elementsPerLayer[N], 
-              get_deltas_matrix_offset(N));
+    const cl_uint last = numberOfLayers - 1;
+    tm.set(numberOfTrainingData, elementsPerLayer[last], 0);
+    act.set(tm.rows, tm.cols, activations_offsets[last]);
+    del_r.set(numberOfTrainingData,
+              elementsPerLayer[last],
+              deltas_offsets[last]);
 
     openclKernels->runElementWiseSubstract(tm, act, del_r);
     
-    for (int i = N - 1; i > 1; i--) {
-        del.set(del_r.rows, 
-                del_r.cols, 
-                del_r.offset);
-        del_r.set(numberOfTrainingData, 
+    for (cl_int i = numberOfLayers - 2; i > 0; i--) {
+        del.set(numberOfTrainingData,
+                elementsPerLayer[i+1],
+                deltas_offsets[i+1]);
+        del_r.set(numberOfTrainingData,
                   elementsPerLayer[i],
-                  get_deltas_matrix_offset(i));
+                  deltas_offsets[i]);
         // wei transposed
-        wei.set(elementsPerLayer[i+1], 
+        wei.set(elementsPerLayer[i+1],
                 elementsPerLayer[i],
-                get_weights_matrix_offset(i), true);
+                weights_offsets[i],
+                true);
         openclKernels->
             runMatrixMultiplicationSigmoid(del, wei, del_r, false, false);
 
@@ -199,9 +213,9 @@ void nn::BP() {
         //print(del, "delta");
         //print(del_r, "delta*Wt");
         
-        act.set(numberOfTrainingData, 
+        act.set(numberOfTrainingData,
                 elementsPerLayer[i],
-                get_activations_matrix_offset(i));
+                activations_offsets[i]);
         openclKernels->
             runElementWiseMultiplicationBySigmoidDerivativeKernel(del_r, act);
 
@@ -211,24 +225,30 @@ void nn::BP() {
     }
     
     // Weight actualization
-    for (int i = N - 1; i > 1; i--) {
+    for (cl_int i = numberOfLayers - 2; i >= 0; i--) {
         // act transposed
         act.set(elementsPerLayer[i], numberOfTrainingData,
-                get_activations_matrix_offset(i), true);
+                activations_offsets[i], true);
         del.set(numberOfTrainingData, elementsPerLayer[i+1],
-                get_deltas_matrix_offset(i+1));
+                deltas_offsets[i+1]);
         wei.set(elementsPerLayer[i], elementsPerLayer[i+1],
-                  get_weights_matrix_offset(i));
+                weights_offsets[i]);
 
         //wei.data.readFromDevice(*queue);
         //print(wei, "Wei");
 
         const bool SumToWeights = true;
-        const cl_float weightIncrementMultiplier = learningRate/numberOfTrainingData;
+        const cl_float weightIncrementMultiplier =
+                       learningRate/cl_float(numberOfTrainingData);
         
-        openclKernels->
-            runMatrixMultiplicationSigmoid(act, del, wei, false, false, 
-                                           SumToWeights, weightIncrementMultiplier);
+        openclKernels->runMatrixMultiplicationSigmoid(
+                            act,
+                            del,
+                            wei,
+                            false,
+                            false,
+                            SumToWeights,
+                            weightIncrementMultiplier);
 
         //act.data.readFromDevice(*queue);
         //del.data.readFromDevice(*queue);
@@ -239,6 +259,22 @@ void nn::BP() {
     }
 }
 
+void nn::train() {
+    
+    for (size_t epoch = 0; epoch < maxEpochs; epoch++) {
+        FF();
+        cl_float ce = cross_entropy();
+        if (epoch % printEpochs == 0) {
+            std::cout << "Epoch: " << epoch << "   CE: " << ce << std::endl;
+        }
+        if (ce < minError) {
+            std::cout << "Epoch: " << epoch << "   CE: " << ce << std::endl;
+            break;
+        }
+        BP();
+    }
+}
+
 cl_float nn::cross_entropy() {
     matrix_cl_float tm(t);
     matrix_cl_float act(activations);
@@ -246,39 +282,41 @@ cl_float nn::cross_entropy() {
 
     tm.set(numberOfTrainingData, elementsPerLayer[numberOfLayers-1], 0);
 
-    const int offset_act = (numberOfNeurons -
-                            elementsPerLayer[numberOfLayers-1])
-                           *numberOfTrainingData;
+    const cl_uint offset_act = (numberOfNeurons -
+                                elementsPerLayer[numberOfLayers-1])
+                               *numberOfTrainingData;
     act.set(tm.rows, tm.cols, offset_act);
 
     return openclKernels->runCrossEntropy(tm, act, ce);
 }
 
-void nn::test_matrix_multiplication(const int nr_rows_A, const int nr_cols_A,
-                                    const int nr_rows_B, const int nr_cols_B) {
+void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
+                                    const cl_uint nr_cols_A,
+                                    const cl_uint nr_rows_B,
+                                    const cl_uint nr_cols_B) {
     matrix_cl_float A(deltas);
     matrix_cl_float B(activations);
     matrix_cl_float C(weights);
     
-    assert (nr_rows_A % 4 == 0 &&
-            nr_rows_B % 4 == 0 &&
-            nr_cols_A % 4 == 0 &&
-            nr_cols_B % 4 == 0 &&
-            nr_cols_A == nr_rows_B);
+    assert(nr_rows_A % 4 == 0 &&
+           nr_rows_B % 4 == 0 &&
+           nr_cols_A % 4 == 0 &&
+           nr_cols_B % 4 == 0 &&
+           nr_cols_A == nr_rows_B);
     
     // Test of not transposed matrices ( CHECKED. IT WORKS!)
     
-    const int nr_rows_C = nr_rows_A;
-    const int nr_cols_C = nr_cols_B;
+    const cl_uint nr_rows_C = nr_rows_A;
+    const cl_uint nr_cols_C = nr_cols_B;
     
-    for (int i = 0; i < nr_rows_A; i++) {
-        for (int j = 0; j < nr_cols_A; j++) {
+    for (cl_uint i = 0; i < nr_rows_A; i++) {
+        for (cl_uint j = 0; j < nr_cols_A; j++) {
             A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
         }
     }
     
-    for (int i = 0; i < nr_rows_B; i++) {
-        for (int j = 0; j < nr_cols_B; j++) {
+    for (cl_uint i = 0; i < nr_rows_B; i++) {
+        for (cl_uint j = 0; j < nr_cols_B; j++) {
             B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
         }
     }
@@ -302,14 +340,14 @@ void nn::test_matrix_multiplication(const int nr_rows_A, const int nr_cols_A,
 
     // Test A transposed
     
-    for (int i = 0; i < nr_cols_A; i++) {
-        for (int j = 0; j < nr_rows_A; j++) {
+    for (cl_uint i = 0; i < nr_cols_A; i++) {
+        for (cl_uint j = 0; j < nr_rows_A; j++) {
             A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
         }
     }
     
-    for (int i = 0; i < nr_rows_B; i++) {
-        for (int j = 0; j < nr_cols_B; j++) {
+    for (cl_uint i = 0; i < nr_rows_B; i++) {
+        for (cl_uint j = 0; j < nr_cols_B; j++) {
             B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
         }
     }
@@ -331,14 +369,14 @@ void nn::test_matrix_multiplication(const int nr_rows_A, const int nr_cols_A,
 
     // Test B transposed
     
-    for (int i = 0; i < nr_rows_A; i++) {
-        for (int j = 0; j < nr_cols_A; j++) {
+    for (cl_uint i = 0; i < nr_rows_A; i++) {
+        for (cl_uint j = 0; j < nr_cols_A; j++) {
             A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
         }
     }
     
-    for (int i = 0; i < nr_cols_B; i++) {
-        for (int j = 0; j < nr_rows_B; j++) {
+    for (cl_uint i = 0; i < nr_cols_B; i++) {
+        for (cl_uint j = 0; j < nr_rows_B; j++) {
             B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
         }
     }
@@ -360,14 +398,14 @@ void nn::test_matrix_multiplication(const int nr_rows_A, const int nr_cols_A,
 
     // Test A and B transposed
     
-    for (int i = 0; i < nr_cols_A; i++) {
-        for (int j = 0; j < nr_rows_A; j++) {
+    for (cl_uint i = 0; i < nr_cols_A; i++) {
+        for (cl_uint j = 0; j < nr_rows_A; j++) {
             A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
         }
     }
     
-    for (int i = 0; i < nr_cols_B; i++) {
-        for (int j = 0; j < nr_rows_B; j++) {
+    for (cl_uint i = 0; i < nr_cols_B; i++) {
+        for (cl_uint j = 0; j < nr_rows_B; j++) {
             B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
         }
     }

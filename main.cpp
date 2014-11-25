@@ -13,17 +13,15 @@
  *
  */
 int main(int argc, char** argv) {
-    const std::string filename = "data.txt";
-
-    nn nn1(filename);
-    //nn1.test_matrix_multiplication(32, 24, 24, 8);
+    const std::string data_file = "data.txt";
+    const std::string weights_file = "weights.txt";
     
-    for(int i=0; i<10000; i++) {
-        nn1.FF();
-        cl_float ce = nn1.cross_entropy();
-        std::cout << "CE: " << ce << std::endl;
-        nn1.BP();
-    }
+    //nn1.test_matrix_multiplication(1024, 512, 512, 64);
+    
+    nn nn1(data_file);
+    //nn1.load_weights(weights_file);
+    nn1.train();
+    nn1.save_weights("output_weights.txt");
     
     return 0;
 }

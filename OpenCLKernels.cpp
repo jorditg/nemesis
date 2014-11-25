@@ -93,8 +93,8 @@ void OpenCLKernels::
     size_t blockSize_r = 8, blockSize_c = 8;
 
     // ??¿¿esto creo que no está bien!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    blockSize_c = boost::math::gcd(global_size[0], blockSize_c/4);
-    blockSize_r = boost::math::gcd(global_size[1], blockSize_r/4);
+    blockSize_c = boost::math::gcd(global_size[0], blockSize_c);
+    blockSize_r = boost::math::gcd(global_size[1], blockSize_r);
     
     // if global size < block size the reduce block size to global size
     
