@@ -373,23 +373,23 @@ __kernel void crossEntropyKernelLocal(__global float4* t,
    However, it fails the MatrixRank and LinearComp tests of the BigCrush 
    test suite from the TestU01 framework.
  */
-__kernel void random_xorshift128(unsigned int4 * index,
-                                 unsigned int max_val,
-                                 unsigned int4 * seed_x,
-                                 unsigned int4 * seed_y,
-                                 unsigned int4 * seed_z,
-                                 unsigned int4 * seed_w) 
+__kernel void random_xorshift128(uint4 * index,
+                                 uint max_val,
+                                 uint4 * seed_x,
+                                 uint4 * seed_y,
+                                 uint4 * seed_z,
+                                 uint4 * seed_w) 
 {
-    int i = get_global_id(0);
+    uint i = get_global_id(0);
 
-    unsigned int t = seed_x[i] ^ (seed_x[i] << 11);
-    unsigned int w = seed_w[i];
-    unsigned val = w ^ (w >> 19) ^ t ^ (t >> 8);
+    uint4 t = seed_x[i] ^ (seed_x[i] << 11);
+    uint4 w = seed_w[i];
+    uint4 val = w ^ (w >> 19) ^ t ^ (t >> 8);
 
     seed_x[i] = seed_y[i]; 
     seed_y[i] = seed_z[i]; 
     seed_z[i] = seed_w[i];    
     seed_w[i] = val;
 
-    return val % max_val;
+    index[i] = val % max_val;
 }

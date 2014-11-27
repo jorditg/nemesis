@@ -222,7 +222,7 @@ void OpenCLKernels::runElementWiseSum(
     elementWiseSumKernel->setArg(1, *(b.data.deviceData));
     elementWiseSumKernel->setArg(2, *(c.data.deviceData));
     elementWiseSumKernel->setArg(3, a.offset/4);
-    elementWiseSummKernel->setArg(4, b.offset/4);
+    elementWiseSumKernel->setArg(4, b.offset/4);
     elementWiseSumKernel->setArg(5, c.offset/4);
     
     const cl::NDRange offset = cl::NullRange;

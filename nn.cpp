@@ -2,6 +2,9 @@
 
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/uniform_real_distribution.hpp>
+#include <boost/random/normal_distribution.hpp>
+#include <boost/random/variate_generator.hpp>
+
 #include <cassert>
 #include <vector>
 #include <algorithm>
@@ -11,6 +14,38 @@
 #include "nn.hpp"
 #include "OpenCLKernels.hpp"
 #include "common.hpp"
+
+/**
+
+ * Sparse random initialization (Martens, 2010)
+
+ */
+
+void nn::populate_sparse_weights() {
+  boost::mt19937 rng;
+  boost::normal_distribution<> nd(0.0f, 1.0f);
+  boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > var_nor(rng, nd);
+
+  const cl_uint init_elements = 15;
+
+  for (std::vector<cl_float>::iterator it = weights.hostData.begin();
+       it != weights.hostData.end(); ++it)
+    *it = 0.0;
+
+  for(cl_uint i = 1; i < numberOfLayers; i++) {
+      boost::random::uniform_real_distribution<> dist(0, elementsPerLayer[i-1]);
+      for(cl_uint to_idx = 0; to_idx < elementsPerLayer[i]; to_idx++) {         
+          for(cl_uint k = 0; k < init_elements; k++) {
+              cl_uint from_idx = dist(rng);
+              weights.hostData[weights_offsets[i-1] +
+                               elementsPerLayer[i] * from_idx +
+                               to_idx] = var_nor();
+          }
+          // set biases to 0
+          weights.hostData[weights_offsets[i-1] + to_idx] = 0.0;
+      }
+  }
+}
 
 void nn::populate_random_weights(cl_float min, cl_float max) {
   boost::random::mt19937 gen;
@@ -31,6 +66,7 @@ void nn::populate_fixed_weights() {
 nn::nn(const std::string &filename)
               : activations(activations_host),
                 weights(weights_host),
+                increment_weights(increment_weights_host),
                 //  weights_transposed(weights_transposed_host),
                 deltas(deltas_host),
                 t(t_host),

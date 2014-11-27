@@ -20,12 +20,12 @@ class nn {
     cl_uint numberOfTrainingData;
     cl_uint numberOfLayers;
 
-    cl_float learningRate = 0.11f;  // Typìcal value 0.3
-    cl_float momentum = 0.9f;       // Typical value 0.9
-    size_t maxEpochs = 100000;      // Typical value 5000000
-    cl_float minError = 0.01;       // Typical value 0.01
+    cl_float learningRate = 0.3f;  // Typìcal value 0.3
+    cl_float momentum = 0.9f;      // Typical value 0.9
+    size_t maxEpochs = 10000;      // Typical value 5000000
+    cl_float minError = 0.01f;     // Typical value 0.01
 
-    size_t printEpochs = 100;       // Typical value 1000
+    size_t printEpochs = 100;      // Typical value 1000
     
     std::vector<cl_uint> elementsPerLayer;
     
@@ -61,6 +61,7 @@ class nn {
     explicit nn(const std::string &filename);
     ~nn();
 
+    void populate_sparse_weights();
     void populate_random_weights(cl_float min, cl_float max);
     void populate_fixed_weights();
     
