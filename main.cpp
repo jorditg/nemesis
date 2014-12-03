@@ -20,6 +20,8 @@ int main(int argc, char** argv) {
     
     nn nn1(data_file);
     //nn1.load_weights(weights_file);
+    
+    //nn1.test_matrix_multiplication(128, 64, 64, 80);
     nn1.populate_sparse_weights();
     nn1.train();
     nn1.save_weights("output_weights.txt");

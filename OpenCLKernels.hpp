@@ -13,6 +13,7 @@
 
 #include <string>
 #include <fstream>
+#include <map>
 
 #include "CL/cl.hpp"
 

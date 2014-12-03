@@ -1,49 +1,51 @@
-/**********************************************************************
-Copyright 2013 Advanced Micro Devices, Inc. All rights reserved.
+#define TILEX 4
 
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+#define TILEX_SHIFT 2
+#define TILEY 4
+#define TILEY_SHIFT 2
 
-	Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-	Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or
- other materials provided with the distribution.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY
- DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-********************************************************************/
+__constant float4 ones = (float4) (1.0f);
+__constant float4 epsilon = (float4) (1E-30);
 
-#include "NN_Kernels.h"
+// sequence used for getting the memory positions of the float4xfloat4 blocks of data without indexing
+__constant int4 normal_seq = (int4) (0, 1, 2, 3);
 
 /*
  *  Returns the index of the element located in (row, col) in a 
  *  row-major memory ordered matrix (Fortran Type)
  */
-int get_index(int offset, int r, int c, int nr_c)
+int4 get_index(int offset, int r, int c, int nr_c, int4 sequence)
 {
-    // TILEY_SHIFT due to we are indexing float4xfloat4 blocks of data
-    return (offset + c + (r << TILEY_SHIFT)*nr_c);
+	const int off = offset + c;
+	int4 result = (int4) (r);
+	result += sequence;
+	result *= nr_c;
+	result += off;
+    return result;
 }
 
 float4 sigmoid(float4 x)
 {
-    return 1.0f / ( 1.0f + exp( -x ) ); 
+    return ones / ( ones + exp( -x ) ); 
 }
 
 float4 sigmoid_derivative(float4 sigmoid)
 {
-  return sigmoid*(sigmoid - 1.0f);
+  return sigmoid*(sigmoid - ones);
 }
 
 float4 cross_entropy(float4 t, float4 y)
 {
-    const float4 epsilon = 1E-30;
-    return ( t * log(y + epsilon) + (1.0f - t) * log (1.0f - y + epsilon) );
+    return ( t * log(y + epsilon) + (ones - t) * log (ones - y + epsilon) );
 }
 
 /* Matrix A is cached into local memory block */
-/* Required global threads = (colsC / 4, rowsC / 4) */
+/* Required global threads = (colsC / 4, rowsC / 4) 
+ * Required sizes: rowsC, colsC, rowsA, colsA, rowsB, colsB
+ * multiples of 8.
+ */
+
 __kernel void matrixMultiplicationSigmoidKernelLocal
                              (__global float4 *matrixA,
                               __global float4 *matrixB,
@@ -61,16 +63,24 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
                               float multPrevVal,
                               float multSum)
 {
-    //int blockPos = get_local_id(0) + get_local_size(0) * (get_local_id(1) << TILEY_SHIFT); //Should be : localId * (TILEX / 4) (float4)
-    int blockPos = get_index(0, get_local_size(0), get_local_id(0), get_local_id(1));
+    const int gid0 = get_global_id(0);
+    const int gid1 = get_global_id(1);
+    const int lid0 = get_local_id(0);
+    const int lid1 = get_local_id(1);
+    const int lsz0 = get_local_size(0);
+    const int lsz1 = get_local_size(1);
+    const int gsz0 = get_global_size(0);
+    const int gsz1 = get_global_size(1);
+    
+    
+    int4 blockPos = get_index(0, (lid1 << TILEY_SHIFT), lid0, lsz0, normal_seq);
 
     /* Position of thread will be according to the number of values it writes i.e TILE size */
     
-    //int globalPos = offsetC + get_global_id(0) + (get_global_id(1) << TILEY_SHIFT) * get_global_size(0);
-    const int col_C = get_global_id(0);
-    const int row_C = get_global_id(1);
-    const int nr_cols_C = get_global_size(0);; 
-    int globalPos = get_index(offsetC, row_C, col_C, nr_cols_C);
+    const int col_C = gid0;
+    const int row_C = gid1;
+    const int nr_cols_C = gsz0; 
+    int4 globalPos = get_index(offsetC, (row_C << TILEY_SHIFT), col_C, nr_cols_C, normal_seq);
 
     /* Each thread writes 4 float4s */
     float4 sum0 = (float4)(0);
@@ -81,57 +91,56 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
     int temp = colsA / 4;
     
     /* This loop runs for number of blocks of A in horizontal direction */
-    for(int i = 0; i < (temp / get_local_size(0)); i++)
+    for(int i = 0; i < (temp / lsz0); i++)
     {
         /* Calculate global ids of threads from the particular block to load from matrix A depending on i */
         //int globalPosA = offsetA + i * get_local_size(0) + get_local_id(0) + (get_global_id(1) << TILEY_SHIFT) * temp;
 
-        const int col_A = i * get_local_size(0) + get_local_id(0);
-        const int row_A = get_global_id(1);
-        const int nr_rows_A = get_global_size(1);
+        const int col_A = i * lsz0 + lid0;
+        const int row_A = gid1;
+        const int nr_rows_A = gsz1;
         const int nr_cols_A = temp; 
         
         if(!AInColMajorOrder) {
-          int globalPosA = get_index(offsetA, row_A, col_A, nr_cols_A);
+          int4 globalPosA = get_index(offsetA, (row_A << TILEY_SHIFT), col_A, nr_cols_A, normal_seq);
           /* Load values in blockA from matrixA */
-          blockA[blockPos] = matrixA[globalPosA];
-          blockA[blockPos + get_local_size(0)] = matrixA[globalPosA + nr_cols_A];
-          blockA[blockPos + 2 * get_local_size(0)] = matrixA[globalPosA + 2 * nr_cols_A];
-          blockA[blockPos + 3 * get_local_size(0)] = matrixA[globalPosA + 3 * nr_cols_A];
+          blockA[blockPos.x] = matrixA[globalPosA.x];
+          blockA[blockPos.y] = matrixA[globalPosA.y];
+          blockA[blockPos.z] = matrixA[globalPosA.z];
+          blockA[blockPos.w] = matrixA[globalPosA.w];
         } else {
           // If A is in column major order not only the index calculation is different but the float4xfloat4 block
           // of data has to be transposed
-          int globalPosA = get_index(offsetA, col_A, row_A, nr_rows_A);
+          int4 globalPosA = get_index(offsetA, (col_A << TILEY_SHIFT), row_A, nr_rows_A, normal_seq);
           // first of all we load the block to private memory
-          float4 v1 = matrixA[globalPosA];
-          float4 v2 = matrixA[globalPosA + 1 * nr_rows_A];
-          float4 v3 = matrixA[globalPosA + 2 * nr_rows_A];
-          float4 v4 = matrixA[globalPosA + 3 * nr_rows_A];
+          float4 v1 = matrixA[globalPosA.x];
+          float4 v2 = matrixA[globalPosA.y];
+          float4 v3 = matrixA[globalPosA.z];
+          float4 v4 = matrixA[globalPosA.w];
 
           // now we transpose it and assign it to the block of memory
-          blockA[blockPos] = (float4) (v1.x, v2.x, v3.x, v4.x);
-          blockA[blockPos + get_local_size(0)] = (float4) (v1.y, v2.y, v3.y, v4.y);
-          blockA[blockPos + 2 * get_local_size(0)] = (float4) (v1.z, v2.z, v3.z, v4.z);
-          blockA[blockPos + 3 * get_local_size(0)] = (float4) (v1.w, v2.w, v3.w, v4.w);
+          blockA[blockPos.x] = (float4) (v1.x, v2.x, v3.x, v4.x);
+          blockA[blockPos.y] = (float4) (v1.y, v2.y, v3.y, v4.y);
+          blockA[blockPos.z] = (float4) (v1.z, v2.z, v3.z, v4.z);
+          blockA[blockPos.w] = (float4) (v1.w, v2.w, v3.w, v4.w);
 
         }
         barrier(CLK_LOCAL_MEM_FENCE);
 
         /* Calculate global ids of threads from the particular block to load from matrix B depending on i */
-        //int globalPosB = offsetB + get_global_id(0) + ((i * get_local_size(0)) << TILEY_SHIFT) * get_global_size(0);
-        const int col_B = get_global_id(0);
-        const int row_B = i * get_local_size(0);
+        const int col_B = gid0;
+        const int row_B = i * lsz0;
         const int nr_rows_B = temp;
-        const int nr_cols_B = get_global_size(0); 
+        const int nr_cols_B = gsz0; 
 
         /* This loop runs for number of threads in horizontal direction in the block of A */
-        for(int j = 0; j < get_local_size(0) * 4; j=j+4)
+        for(int j = 0; j < lsz0 * 4; j=j+4)
         {
             /* Load 4 float4s from blockA : access patters = strided from local memory */
-            float4 tempA0 = blockA[(j >> 2) + get_local_id(1) * TILEY * get_local_size(0)];
-            float4 tempA1 = blockA[(j >> 2) + (get_local_id(1) * TILEY + 1) * get_local_size(0)];
-            float4 tempA2 = blockA[(j >> 2) + (get_local_id(1) * TILEY + 2) * get_local_size(0)];
-            float4 tempA3 = blockA[(j >> 2) + (get_local_id(1) * TILEY + 3) * get_local_size(0)];
+            float4 tempA0 = blockA[(j >> 2) + lid1 * TILEY * lsz0];
+            float4 tempA1 = blockA[(j >> 2) + (lid1 * TILEY + 1) * lsz0];
+            float4 tempA2 = blockA[(j >> 2) + (lid1 * TILEY + 2) * lsz0];
+            float4 tempA3 = blockA[(j >> 2) + (lid1 * TILEY + 3) * lsz0];
 
             /* Load corresponding values from matrixB, access pattern = linear from global memory */
             float4 tempB0;
@@ -140,21 +149,20 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
             float4 tempB3;
 
             if(!BInColMajorOrder) {
-              int globalPosB = get_index(offsetB, row_B, col_B, nr_cols_B);
+              int4 globalPosB = get_index(offsetB, (row_B << TILEY_SHIFT) + j, col_B, nr_cols_B, normal_seq);
 
-              tempB0 = matrixB[globalPosB  + j *  nr_cols_B]; //Should be localId.x * (TILEX / 4)
-              tempB1 = matrixB[globalPosB  + (j + 1) * nr_cols_B];
-              tempB2 = matrixB[globalPosB  + (j + 2) * nr_cols_B];
-              tempB3 = matrixB[globalPosB  + (j + 3) * nr_cols_B];
+              tempB0 = matrixB[globalPosB.x]; //Should be localId.x * (TILEX / 4)
+              tempB1 = matrixB[globalPosB.y];
+              tempB2 = matrixB[globalPosB.z];
+              tempB3 = matrixB[globalPosB.w];
             } else {
-              // ??¿¿ No está pensado bien que OK
-              int globalPosB = get_index(offsetB, col_B, row_B + (j >> 2), nr_rows_B);
+              int4 globalPosB = get_index(offsetB, (col_B << TILEY_SHIFT), row_B + (j >> 2), nr_rows_B, normal_seq);
 
               // load block in private memory
-              float4 v1 = matrixB[globalPosB];
-              float4 v2 = matrixB[globalPosB + 1 * nr_rows_B];
-              float4 v3 = matrixB[globalPosB + 2 * nr_rows_B];
-              float4 v4 = matrixB[globalPosB + 3 * nr_rows_B];
+              float4 v1 = matrixB[globalPosB.x];
+              float4 v2 = matrixB[globalPosB.y];
+              float4 v3 = matrixB[globalPosB.z];
+              float4 v4 = matrixB[globalPosB.w];
 
               // now we transpose it
               tempB0 = (float4) (v1.x, v2.x, v3.x, v4.x);
@@ -208,20 +216,20 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
     
     /* Write 16 values to matrixC */
     if(sumToMatrixC) {
-        const float4 a = matrixC[globalPos] * multPrevVal;
-        const float4 b = matrixC[globalPos +  get_global_size(0)] * multPrevVal;
-        const float4 c = matrixC[globalPos +  2 * get_global_size(0)] * multPrevVal;
-        const float4 d = matrixC[globalPos +  3 * get_global_size(0)] * multPrevVal;  
+        const float4 a = matrixC[globalPos.x] * multPrevVal;
+        const float4 b = matrixC[globalPos.y] * multPrevVal;
+        const float4 c = matrixC[globalPos.z] * multPrevVal;
+        const float4 d = matrixC[globalPos.w] * multPrevVal;  
 
-        matrixC[globalPos] = a + multSum*sum0;
-        matrixC[globalPos +  get_global_size(0)] = b + multSum*sum1;
-        matrixC[globalPos +  2 * get_global_size(0)] = c + multSum*sum2;
-        matrixC[globalPos +  3 * get_global_size(0)] = d + multSum*sum3;    
+        matrixC[globalPos.x] = a + multSum*sum0;
+        matrixC[globalPos.y] = b + multSum*sum1;
+        matrixC[globalPos.z] = c + multSum*sum2;
+        matrixC[globalPos.w] = d + multSum*sum3;    
     } else {
-        matrixC[globalPos] = sum0;
-        matrixC[globalPos +  get_global_size(0)] = sum1;
-        matrixC[globalPos +  2 * get_global_size(0)] = sum2;
-        matrixC[globalPos +  3 * get_global_size(0)] = sum3;    
+        matrixC[globalPos.x] = sum0;
+        matrixC[globalPos.y] = sum1;
+        matrixC[globalPos.z] = sum2;
+        matrixC[globalPos.w] = sum3;    
     }
 }
 

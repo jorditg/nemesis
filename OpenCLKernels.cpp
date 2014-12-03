@@ -10,13 +10,11 @@
 #include <iostream>
 #include <boost/math/common_factor.hpp>
 
-#include "NN_Kernels.h"
 #include "OpenCLKernels.hpp"
 #include "common.hpp"
 
 OpenCLKernels::~OpenCLKernels() {
     delete elementWiseMultiplicationBySigmoidDerivativeKernel;
-//    delete transposeKernelLocal;
     delete crossEntropyKernelLocal;
     delete elementWiseSubstractKernel;
     delete matrixMultiplicationSigmoidKernel;
@@ -80,7 +78,19 @@ void OpenCLKernels::opencl_init() {
     }
 }
 
-void OpenCLKernels::
+/*
+ * Requirements to use this function: All the sizes must be multiple of 16. TESTED (OK)
+ * 
+ * setBias = true --> Fixes the first column to 1 (used when calculating activations in order
+ * to use the first neuron of the layer as bias (output = 1.0 always)
+ * 
+ * calcSigmoid = true --> After multiplying A*B calculates the sigmoid of the result
+ * 
+ * sumToC = true --> instead of assigning the result of A*B to C, makes the next operation:
+ * 
+ *  C = multPrevVal * Cprevious + multSum * Ccalculated
+ */
+ void OpenCLKernels::
      runMatrixMultiplicationSigmoid(matrix_cl_float const &A,
                                     matrix_cl_float const &B,
                                     matrix_cl_float const &C,
@@ -89,24 +99,31 @@ void OpenCLKernels::
                                     bool sumToC,
                                     cl_float multPrevVal,
                                     cl_float multSum) {
+    
     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
                                    size_t(C.rows/4)};
     
+    // Check size compatibility
     assert(C.rows == A.rows && C.cols == B.cols && A.cols == B.rows);
     
-    // Proposed block size = 8
-    size_t blockSize_r = 8, blockSize_c = 8;
-
-    // ??¿¿esto creo que no está bien!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    blockSize_c = boost::math::gcd(global_size[0], blockSize_c);
-    blockSize_r = boost::math::gcd(global_size[1], blockSize_r);
+    // Check A and B sizes are multiple of 16
+    assert((global_size[0] % 4 == 0 ) && (global_size[1] % 4 == 0));
     
-    // if global size < block size the reduce block size to global size
+    size_t blocksize = 4;
     
+    // if possible use a greater blocksize
+    if((global_size[0] % 8 == 0) &&
+       (global_size[1] % 8 == 0) && 
+       ((A.cols/4) % 8) == 0)
+        blocksize = 8;
+    else if(global_size[0] == 2 || global_size[1] == 2)
+        blocksize = 2;
+    else if(global_size[0] == 1 || global_size[1] == 1)
+        blocksize = 1;
     
     // float4 elements in kernel
-    const size_t local_size[2] = { blockSize_c, blockSize_r };
+    const size_t local_size[2] = { blocksize, blocksize };
 
     // -----------------------------------------------------------------------
     // Setting kernel arguments
@@ -119,7 +136,7 @@ void OpenCLKernels::
     matrixMultiplicationSigmoidKernel->setArg(5, B.offset/4);
     matrixMultiplicationSigmoidKernel->setArg(6, C.offset/4);
     matrixMultiplicationSigmoidKernel->setArg(7,
-          cl::Local((blockSize_c*4)*(blockSize_r*4)*sizeof(cl_float)));
+          cl::Local((blocksize*4)*(blocksize*4)*sizeof(cl_float)));
     matrixMultiplicationSigmoidKernel->setArg(8, setBias?1:0);
     matrixMultiplicationSigmoidKernel->setArg(9,
           calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
@@ -169,13 +186,13 @@ void OpenCLKernels::runElementWiseSubstract(
     assert(tm.cols == ym.cols && tm.rows == ym.rows &&
            tm.cols == em.cols && tm.rows == em.rows);
     
-    const size_t blockSize = 512;  // float4's
+    //const size_t blockSize = 512;  // float4's
     const size_t data_size_float4_global = ym.rows*ym.cols/4;
     
     size_t global_size[1] = {data_size_float4_global};
-    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
+    //size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
-    assert(global_size[0] % local_size[0] == 0);
+    //assert(global_size[0] % local_size[0] == 0);
     
 //    std::cout << "Launching for device\n"
 //              << " (global size: " << global_size[0] << ")\n"
@@ -190,11 +207,11 @@ void OpenCLKernels::runElementWiseSubstract(
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
-    const cl::NDRange local(local_size[0]);
+    //const cl::NDRange local(local_size[0]);
     queue.enqueueNDRangeKernel(*elementWiseSubstractKernel,
                                offset,
-                               global,
-                               local);
+                               global/*,
+                               local*/);
     queue.finish();
 }
 
@@ -206,13 +223,13 @@ void OpenCLKernels::runElementWiseSum(
     assert(a.cols == b.cols && a.rows == b.rows &&
            a.cols == c.cols && a.rows == c.rows);
     
-    const size_t blockSize = 512;  // float4's
+    //const size_t blockSize = 512;  // float4's
     const size_t data_size_float4_global = b.rows*b.cols/4;
     
     size_t global_size[1] = {data_size_float4_global};
-    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
+    //size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
-    assert(global_size[0] % local_size[0] == 0);
+    //assert(global_size[0] % local_size[0] == 0);
     
 //    std::cout << "Launching for device\n"
 //              << " (global size: " << global_size[0] << ")\n"
@@ -227,11 +244,11 @@ void OpenCLKernels::runElementWiseSum(
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
-    const cl::NDRange local(local_size[0]);
+    //const cl::NDRange local(local_size[0]);
     queue.enqueueNDRangeKernel(*elementWiseSumKernel,
                                offset,
-                               global,
-                               local);
+                               global/*,
+                               local*/);
     queue.finish();
 }
 
@@ -243,13 +260,13 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
     assert(deltas.cols == activations.cols
            && deltas.rows == activations.rows);
     
-    const size_t blockSize = 512;  // float4's
+    //const size_t blockSize = 512;  // float4's
     const size_t data_size_float4_global = deltas.rows*deltas.cols/4;
     
     size_t global_size[1] = {data_size_float4_global};
-    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
+    //size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
-    assert(global_size[0] % local_size[0] == 0);
+    //assert(global_size[0] % local_size[0] == 0);
     
 //    std::cout << "Launching for device\n"
 //              << " (global size: " << global_size[0] << ")\n"
@@ -266,26 +283,41 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
-    const cl::NDRange local(local_size[0]);
+    //const cl::NDRange local(local_size[0]);
     queue.enqueueNDRangeKernel(
         *elementWiseMultiplicationBySigmoidDerivativeKernel,
         offset,
-        global,
-        local);
+        global/*,
+        local*/);
     queue.finish();
 }
 
 cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
                                         matrix_cl_float const &y,
                                         matrix_cl_float &error) {
-    const size_t blockSize = 2048;  // float4's
+    // proposed blockSize
+    const size_t blockSize = 512;  // float4's (8kBytes)
+    
     const size_t data_size_float4_global = y.rows*y.cols/4;
 
     size_t global_size[1] = {data_size_float4_global / 2};
-    size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
+    // global_size es múltiplo de 8. 
+    // Aprovechamos éste hecho para fijar local_size
+    size_t local_size[1] = {8};
+    
+    if(global_size[0] <= blockSize) {
+        local_size[0] = global_size[0];
+    } else {
+        size_t resto = global_size[0] / 8;  // sabemos que es divisible
+        if(resto <= blockSize) {
+            local_size[0] = resto;
+        } 
+    }
+    
+    
     
     assert(data_size_float4_global * 4 <= error.data.hostData.size());    
-    assert(global_size[0] % local_size[0] == 0);
+    //assert(global_size[0] % local_size[0] == 0);
     
     // -----------------------------------------------------------------------
     // Setting kernel arguments
@@ -328,31 +360,3 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     
     return -ce/(y.rows*y.cols);
 }
-
-
-//// NOT TESTED
-//void OpenCLKernels::runTranspose(matrix_cl_float const &a,
-//                                 matrix_cl_float &transpose) {
-//
-//    // -----------------------------------------------------------------------
-//    // Setting kernel arguments
-//    // -----------------------------------------------------------------------
-//    transposeKernelLocal->setArg(0, transpose.data.deviceData);
-//    transposeKernelLocal->setArg(1, a.data.deviceData);
-//    transposeKernelLocal->setArg(2, a.cols);
-//    transposeKernelLocal->setArg(3, a.rows);
-//    transposeKernelLocal->setArg(4, cl::Local((TRANSPOSE_BLOCK_DIM+1)
-//                                                * TRANSPOSE_BLOCK_DIM
-//                                                * sizeof(cl_float)));
-//    transposeKernelLocal->setArg(5, transpose.offset);
-//    transposeKernelLocal->setArg(6, a.offset);
-//
-//    size_t global_size[2] = {size_t(a.cols), size_t(a.rows)};
-//    size_t local_size[2] = {TRANSPOSE_BLOCK_DIM, TRANSPOSE_BLOCK_DIM };
-//    
-//    const cl::NDRange offset = cl::NullRange;
-//    const cl::NDRange global(global_size[0], global_size[1]);
-//    const cl::NDRange local(local_size[0], local_size[1]);
-//    queue.enqueueNDRangeKernel(*transposeKernelLocal, offset, global, local);
-//    queue.finish();
-//}

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <string>
 #include <iostream>
+#include <future>
 
 #include "nn.hpp"
 #include "OpenCLKernels.hpp"
@@ -30,24 +31,25 @@ void nn::populate_sparse_weights() {
 
   for (std::vector<cl_float>::iterator it = weights.hostData.begin();
        it != weights.hostData.end(); ++it)
-    *it = 0.0;
+    *it = 0.0f;
 
   for(cl_uint i = 1; i < numberOfLayers; i++) {
-      boost::random::uniform_real_distribution<> dist(0, elementsPerLayer[i-1]);
+      boost::random::uniform_real_distribution<> dist(0, elementsPerLayer[i-1]-1);
       for(cl_uint to_idx = 0; to_idx < elementsPerLayer[i]; to_idx++) {         
           for(cl_uint k = 0; k < init_elements; k++) {
-              cl_uint from_idx = dist(rng);
-              weights.hostData[weights_offsets[i-1] +
-                               elementsPerLayer[i] * from_idx +
-                               to_idx] = var_nor();
+              const cl_uint from_idx = dist(rng);
+              const cl_uint idx = weights_offsets[i-1] + 
+                                  elementsPerLayer[i] * from_idx + 
+                                  to_idx;
+              weights.hostData[idx] = var_nor();              
           }
           // set biases to 0
-          weights.hostData[weights_offsets[i-1] + to_idx] = 0.0;
+          weights.hostData[weights_offsets[i-1] + to_idx] = 0.0f;
       }
   }
 }
 
-void nn::populate_random_weights(cl_float min, cl_float max) {
+void nn::populate_random_weights(const cl_float min, const cl_float max) {
   boost::random::mt19937 gen;
   boost::random::uniform_real_distribution<> dist(min, max);
 
@@ -56,11 +58,11 @@ void nn::populate_random_weights(cl_float min, cl_float max) {
     *it = dist(gen);
 }
 
-void nn::populate_fixed_weights() {
+void nn::populate_fixed_weights(const cl_float val) {
   
   for (std::vector<cl_float>::iterator it = weights.hostData.begin() ;
        it != weights.hostData.end(); ++it)
-    *it = 0.00005;
+    *it = val;
 }
 
 nn::nn(const std::string &filename)
@@ -70,7 +72,8 @@ nn::nn(const std::string &filename)
                 //  weights_transposed(weights_transposed_host),
                 deltas(deltas_host),
                 t(t_host),
-                cross_entropy_error(cross_entropy_error_host) {
+                cross_entropy_error(cross_entropy_error_host),
+                minibatch_idx(minibatch_idx_host) {
     
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);  // get available OpenCL platforms
@@ -91,7 +94,7 @@ nn::nn(const std::string &filename)
                   numberOfTrainingData,
                   numberOfLayers,
                   elementsPerLayer);
-       
+    
     // host memory allocation for neural network
     numberOfWeights = 0;
     numberOfNeurons = 0;
@@ -100,6 +103,8 @@ nn::nn(const std::string &filename)
         numberOfNeurons += elementsPerLayer[i];
     }
     numberOfNeurons += elementsPerLayer[numberOfLayers-1];
+    
+    //minibatch_idx.hostData.resize(minibatchSize);
     
     activations.hostData.resize(numberOfNeurons*numberOfTrainingData);
     weights.hostData.resize(numberOfWeights);
@@ -127,7 +132,7 @@ nn::nn(const std::string &filename)
     }
     
     //load_csv_vector("weights.txt", weights.hostData);
-    populate_random_weights(0.00001, 0.00009);
+    //populate_random_weights(0.00001, 0.00009);
 
 
     // device memory allocation
@@ -137,6 +142,8 @@ nn::nn(const std::string &filename)
     // uses OpenCL to accelerate calculations.
     
     // Create buffers and copy host contents
+    //minibatch_idx.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
+    
     activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     increment_weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
@@ -188,28 +195,13 @@ void nn::FF() {
     matrix_cl_float B(weights);
     matrix_cl_float C(activations);
     
-    A.offset = 0;
-    A.rows = numberOfTrainingData;
-    B.offset = 0;
-    C.offset = elementsPerLayer[0]*numberOfTrainingData;
     for ( cl_uint i = 0; i < N; i++ ) {
-        A.cols = elementsPerLayer[i];
-        B.rows = A.cols;
-        B.cols = elementsPerLayer[i+1];
-        C.rows = A.rows;
-        C.cols = B.cols;
-        openclKernels->runMatrixMultiplicationSigmoid(A, B, C, (i != (N - 1)));
-        // C.data.readFromDevice(*queue);
-        // print_vector(C.data.hostData, C.rows, C.cols, C.offset);
-        if (i < N-1) {
-            A.offset = C.offset;
-            C.offset += elementsPerLayer[i+1]*numberOfTrainingData;
-            B.offset += elementsPerLayer[i]*elementsPerLayer[i+1];
-        }
+        A.set(numberOfTrainingData, elementsPerLayer[i], activations_offsets[i]);
+        B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
+        C.set(numberOfTrainingData, elementsPerLayer[i+1], activations_offsets[i+1]);
+        const bool setBias = (i != (N - 1));
+        openclKernels->runMatrixMultiplicationSigmoid(A, B, C, setBias);
     }
- 
-    //C.data.readFromDevice(*queue);  // copy calculatied activations back to host
-    //print_vector(C.data.hostData, C.rows, C.cols, C.offset);
 }
 
 void nn::BP() {
@@ -305,8 +297,17 @@ void nn::BP() {
 }
 
 void nn::train() {
+    //minibatch_generator mg(numberOfTrainingData, minibatchSize, minibatch_idx_host);
+    
+    //  auto fut = std::async(&minibatch_generator::generate, &mg);
     
     for (size_t epoch = 0; epoch < maxEpochs; epoch++) {
+        // wait for minibatch thread to finish
+        //fut.get();
+        // load to device the thread calculated minibatch
+        // minibatch_idx.writeToDevice(*queue);
+        // launch next minibatch calculation
+        //fut = std::async(&minibatch_generator::generate, &mg);
         FF();
         cl_float ce = cross_entropy();
         if (epoch % printEpochs == 0) {
@@ -325,12 +326,10 @@ cl_float nn::cross_entropy() {
     matrix_cl_float act(activations);
     matrix_cl_float ce(cross_entropy_error);
 
-    tm.set(numberOfTrainingData, elementsPerLayer[numberOfLayers-1], 0);
-
-    const cl_uint offset_act = (numberOfNeurons -
-                                elementsPerLayer[numberOfLayers-1])
-                               *numberOfTrainingData;
-    act.set(tm.rows, tm.cols, offset_act);
+    const cl_uint elemLastLayer = elementsPerLayer[numberOfLayers-1];
+    
+    tm.set(numberOfTrainingData, elemLastLayer, 0);
+    act.set(numberOfTrainingData, elemLastLayer, activations_offsets[numberOfLayers-1]);
 
     return openclKernels->runCrossEntropy(tm, act, ce);
 }
@@ -339,6 +338,9 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
                                     const cl_uint nr_cols_A,
                                     const cl_uint nr_rows_B,
                                     const cl_uint nr_cols_B) {
+  boost::random::mt19937 gen;
+  boost::random::uniform_real_distribution<> dist(-5.0f, 5.0f);
+  
     matrix_cl_float A(deltas);
     matrix_cl_float B(activations);
     matrix_cl_float C(weights);
@@ -356,13 +358,15 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     
     for (cl_uint i = 0; i < nr_rows_A; i++) {
         for (cl_uint j = 0; j < nr_cols_A; j++) {
-            A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
+            //A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
+            A.data.hostData[j + nr_cols_A*i] = dist(gen);
         }
     }
     
     for (cl_uint i = 0; i < nr_rows_B; i++) {
         for (cl_uint j = 0; j < nr_cols_B; j++) {
-            B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+            //B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+            B.data.hostData[j + nr_cols_B*i] = dist(gen);
         }
     }
     
@@ -387,13 +391,15 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     
     for (cl_uint i = 0; i < nr_cols_A; i++) {
         for (cl_uint j = 0; j < nr_rows_A; j++) {
-            A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
+            //A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
+            A.data.hostData[j + nr_rows_A*i] = dist(gen);
         }
     }
     
     for (cl_uint i = 0; i < nr_rows_B; i++) {
         for (cl_uint j = 0; j < nr_cols_B; j++) {
-            B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+            //B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+            B.data.hostData[j + nr_cols_B*i] = dist(gen);
         }
     }
     
@@ -416,13 +422,15 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     
     for (cl_uint i = 0; i < nr_rows_A; i++) {
         for (cl_uint j = 0; j < nr_cols_A; j++) {
-            A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
+            //A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
+            A.data.hostData[j + nr_cols_A*i] = dist(gen);
         }
     }
     
     for (cl_uint i = 0; i < nr_cols_B; i++) {
         for (cl_uint j = 0; j < nr_rows_B; j++) {
-            B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
+            //B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
+            B.data.hostData[j + nr_rows_B*i] = dist(gen);
         }
     }
     
@@ -445,13 +453,15 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     
     for (cl_uint i = 0; i < nr_cols_A; i++) {
         for (cl_uint j = 0; j < nr_rows_A; j++) {
-            A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
+            //A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
+            A.data.hostData[j + nr_rows_A*i] = dist(gen);
         }
     }
     
     for (cl_uint i = 0; i < nr_cols_B; i++) {
         for (cl_uint j = 0; j < nr_rows_B; j++) {
-            B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
+            //B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
+            B.data.hostData[j + nr_rows_B*i] = dist(gen);
         }
     }
     
