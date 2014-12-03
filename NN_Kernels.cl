@@ -32,7 +32,7 @@ float4 sigmoid(float4 x)
 
 float4 sigmoid_derivative(float4 sigmoid)
 {
-  return sigmoid*(sigmoid - ones);
+  return sigmoid*(ones - sigmoid);
 }
 
 float4 cross_entropy(float4 t, float4 y)
@@ -331,73 +331,3 @@ __kernel void crossEntropyKernelLocal(__global float4* t,
 // Al finalizar la función se obtiene un vector de output de tamaño igual al número de grupos
 // que hay que sumar, obteniendo el resultado final
 
-
-/* Matrix transpose with OpenCL
-* Device code.
-*/
-
-//// This kernel is optimized to ensure all global reads and writes are coalesced,
-//// and to avoid bank conflicts in shared memory.  This kernel is up to 11x faster
-//// than the naive kernel.  Note that the shared memory array is sized to 
-//// (TRANSPOSE_BLOCK_DIM+1)*TRANSPOSE_BLOCK_DIM.  This pads each row of the 2D block in shared memory 
-//// so that bank conflicts do not occur when threads address the array column-wise.
-//__kernel void transpose(__global float *odata, 
-//                        __global float *idata, 
-//                        int width, 
-//                        int height, 
-//                        __local float* block,
-//                        int offset_o,
-//                        int offset_i)
-//{
-//	// read the matrix tile into shared memory
-//	unsigned int xIndex = get_global_id(0);
-//	unsigned int yIndex = get_global_id(1);
-//
-//	if((xIndex < width) && (yIndex < height))
-//	{
-//		unsigned int index_in = offset_i + yIndex * width + xIndex;
-//		block[get_local_id(1)*(TRANSPOSE_BLOCK_DIM+1)+get_local_id(0)] = idata[index_in];
-//	}
-//
-//	barrier(CLK_LOCAL_MEM_FENCE);
-//
-//	// write the transposed matrix tile to global memory
-//	xIndex = get_group_id(1) * TRANSPOSE_BLOCK_DIM + get_local_id(0);
-//	yIndex = get_group_id(0) * TRANSPOSE_BLOCK_DIM + get_local_id(1);
-//	if((xIndex < height) && (yIndex < width))
-//        {
-//		unsigned int index_out = offset_o + yIndex * height + xIndex;
-//		odata[index_out] = block[get_local_id(0)*(TRANSPOSE_BLOCK_DIM+1)+get_local_id(1)];
-//	}
-//}
-
-/* 
-   Returns a list of random indexes with possibility of repetition between 
-   0 and max_val. The first time is called the vectors seed_x, seed_y,
-   seed_z, seed_w have to be filled with NON REPEATED random elements
-   (all seeds different). Global range is 1D.
-   This algorithm has a maximal period of 2^128 − 1[4] 
-   and passes the diehard tests. 
-   However, it fails the MatrixRank and LinearComp tests of the BigCrush 
-   test suite from the TestU01 framework.
- */
-__kernel void random_xorshift128(uint4 * index,
-                                 uint max_val,
-                                 uint4 * seed_x,
-                                 uint4 * seed_y,
-                                 uint4 * seed_z,
-                                 uint4 * seed_w) 
-{
-    uint i = get_global_id(0);
-
-    uint4 t = seed_x[i] ^ (seed_x[i] << 11);
-    uint4 w = seed_w[i];
-    uint4 val = w ^ (w >> 19) ^ t ^ (t >> 8);
-
-    seed_x[i] = seed_y[i]; 
-    seed_y[i] = seed_z[i]; 
-    seed_z[i] = seed_w[i];    
-    seed_w[i] = val;
-
-    index[i] = val % max_val;
-}

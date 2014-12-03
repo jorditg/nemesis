@@ -21,7 +21,7 @@
 template<typename T>
 struct host_device_memory_map {
   std::vector<T> & hostData;
-  cl::Buffer * deviceData;
+  cl::Buffer * deviceData = nullptr;
   
   explicit inline host_device_memory_map(std::vector<T> & v) : hostData(v) {}
   
@@ -56,7 +56,7 @@ struct host_device_memory_map {
   }
   
   inline ~host_device_memory_map() {
-      if (deviceData) delete deviceData;
+      if (deviceData != nullptr) delete deviceData;
   }
 };
 
@@ -89,12 +89,16 @@ struct opencl_matrix {
 
 typedef opencl_matrix<cl_float> matrix_cl_float;
 
+void load_nn_data(const std::string & filename,
+                   cl_uint &layers,
+                   std::vector<cl_uint> &elements);
+
 void load_csv_data(const std::string & filename,
                    std::vector<cl_float> & input,
                    std::vector<cl_float> & output,
                    cl_uint &rows,
-                   cl_uint &layers,
-                   std::vector<cl_uint> &elements);
+                   cl_uint in_elements,
+                   cl_uint out_elements);
 
 void load_csv_vector(const std::string & filename,
                      std::vector<cl_float> &weights);

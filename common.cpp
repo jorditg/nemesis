@@ -5,10 +5,7 @@
 
 typedef boost::tokenizer< boost::escaped_list_separator<char> > Tokenizer;
 
-void load_csv_data(const std::string & filename,
-                   std::vector<cl_float> & input,
-                   std::vector<cl_float> & output,
-                   cl_uint &rows,
+void load_nn_data(const std::string & filename,
                    cl_uint &layers,
                    std::vector<cl_uint> &elements) {
     
@@ -19,10 +16,7 @@ void load_csv_data(const std::string & filename,
     }
 
     std::string line;
-
-    getline(in, line);               // read number of data lines
-    rows = std::stoi(line);
-        
+      
     std::vector< std::string > vec;
 
     getline(in, line);              // read elements per layer
@@ -39,10 +33,30 @@ void load_csv_data(const std::string & filename,
         assert(elem % 4 == 0);
         elements.push_back(elem);
         layers++;
-    }
+    }    
+}
+
+void load_csv_data(const std::string & filename,
+                   std::vector<cl_float> & input,
+                   std::vector<cl_float> & output,
+                   cl_uint &rows,
+                   cl_uint in_elements,
+                   cl_uint out_elements) {
     
-    // cols to read = number of inputs - 1 (bias) + number of outputs
-    const cl_uint cols = elements[0] + elements[elements.size()-1];
+    std::ifstream in(filename.c_str());
+    if (!in.is_open()) {
+        std::cout << "File already opened. Exiting\n";
+        exit(1);
+    }
+
+    std::string line;
+
+    getline(in, line);               // read number of data lines
+    rows = std::stoi(line);
+        
+    std::vector< std::string > vec;
+    // cols to read = number of inputs (counting bias that we add) + number of outputs
+    const cl_uint cols = in_elements + out_elements;
     
     cl_uint n = 0;
     while (getline(in, line)) {
@@ -60,7 +74,7 @@ void load_csv_data(const std::string & filename,
         cl_uint i = 0;
         for (std::vector<std::string>::iterator it = vec.begin();
              it != vec.end(); ++it) {
-            if (i < elements[0]) input.push_back(std::stof(*it));
+            if (i < in_elements) input.push_back(std::stof(*it));
             else
               output.push_back(std::stof(*it));
             i++;
@@ -69,7 +83,7 @@ void load_csv_data(const std::string & filename,
         if (n == rows) break;
     }
     
-    assert((input.size() / size_t(elements[0])) == size_t(rows));
+    assert((input.size() / size_t(in_elements)) == size_t(rows));
 }
 
 void load_csv_vector(const std::string & filename,
@@ -115,9 +129,11 @@ void save_csv_vector(const std::string & filename,
         exit(1);
     }
 
-    if(weights.size() > 0) out << weights[0];
-    for (size_t i = 0; i < weights.size(); i++) {
-        out << "," << weights[i];
+    if(weights.size() > 0) { 
+        out << weights[0];
+        for (size_t i = 1; i < weights.size(); i++) {
+            out << "," << weights[i];
+        }
     }
     out << std::endl;
 }

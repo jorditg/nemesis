@@ -13,12 +13,14 @@
  *
  */
 int main(int argc, char** argv) {
-    const std::string data_file = "data.txt";
+    const std::string nn_file = "nn.txt";
+    const std::string train_file = "train.txt";
+    const std::string test_file = "test.txt";
     const std::string weights_file = "weights.txt";
     
     //nn1.test_matrix_multiplication(1024, 512, 512, 64);
     
-    nn nn1(data_file);
+    nn nn1(nn_file, train_file, test_file);
     //nn1.load_weights(weights_file);
     
     //nn1.test_matrix_multiplication(128, 64, 64, 80);

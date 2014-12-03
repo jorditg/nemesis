@@ -65,15 +65,17 @@ void nn::populate_fixed_weights(const cl_float val) {
     *it = val;
 }
 
-nn::nn(const std::string &filename)
+nn::nn(const std::string &nn_file,
+       const std::string &train_file,
+       const std::string &test_file)
               : activations(activations_host),
+                activations_test(activations_test_host),
                 weights(weights_host),
                 increment_weights(increment_weights_host),
-                //  weights_transposed(weights_transposed_host),
                 deltas(deltas_host),
                 t(t_host),
-                cross_entropy_error(cross_entropy_error_host),
-                minibatch_idx(minibatch_idx_host) {
+                t_test(t_test_host),
+                cross_entropy_error(cross_entropy_error_host) {
     
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);  // get available OpenCL platforms
@@ -87,13 +89,22 @@ nn::nn(const std::string &filename)
     // Create queue of first device
     queue = new cl::CommandQueue(*context, devices[0]);
 
+    // load nn structure
+    load_nn_data(nn_file, numberOfLayers, elementsPerLayer);
     // load input data into host memory
-    load_csv_data(filename,
+    load_csv_data(train_file,
                   activations.hostData,
                   t.hostData,
                   numberOfTrainingData,
-                  numberOfLayers,
-                  elementsPerLayer);
+                  elementsPerLayer[0],
+                  elementsPerLayer[numberOfLayers-1]);
+
+    load_csv_data(test_file,
+                  activations_test.hostData,
+                  t_test.hostData,
+                  numberOfTestData,
+                  elementsPerLayer[0],
+                  elementsPerLayer[numberOfLayers-1]);
     
     // host memory allocation for neural network
     numberOfWeights = 0;
@@ -107,9 +118,9 @@ nn::nn(const std::string &filename)
     //minibatch_idx.hostData.resize(minibatchSize);
     
     activations.hostData.resize(numberOfNeurons*numberOfTrainingData);
+    activations_test.hostData.resize(numberOfNeurons*numberOfTestData);
     weights.hostData.resize(numberOfWeights);
     increment_weights.hostData.resize(numberOfWeights);
-    //weights_transposed.hostData.resize(numberOfWeights);
     // there are no deltas in input layer
     deltas.hostData.resize((numberOfNeurons
                             -elementsPerLayer[0])*numberOfTrainingData);
@@ -117,15 +128,19 @@ nn::nn(const std::string &filename)
 
     // calculate offsets of every layer inside the vectors
     activations_offsets.resize(numberOfLayers);
+    activations_test_offsets.resize(numberOfLayers);
     deltas_offsets.resize(numberOfLayers);
     weights_offsets.resize(numberOfLayers-1);
     activations_offsets[0] = 0;
+    activations_test_offsets[0] = 0;
     weights_offsets[0] = 0;
     deltas_offsets[0] = 0;   // never used in the algorithm
     deltas_offsets[1] = 0;
     for (cl_uint i = 1; i < numberOfLayers; i++) {
       activations_offsets[i] = activations_offsets[i-1] +
                                numberOfTrainingData*elementsPerLayer[i-1];
+      activations_test_offsets[i] = activations_test_offsets[i-1] +
+                               numberOfTestData*elementsPerLayer[i-1];
       weights_offsets[i] = weights_offsets[i-1] +
                            elementsPerLayer[i-1]*elementsPerLayer[i];
       deltas_offsets[i] = activations_offsets[i] - activations_offsets[1];
@@ -145,26 +160,27 @@ nn::nn(const std::string &filename)
     //minibatch_idx.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     
     activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
+    activations_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     increment_weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
-//    weights_transposed.createBuffer(*context,
-//                                    CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     deltas.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
-
-    activations.writeToDevice(*queue);
-    weights.writeToDevice(*queue);
-    t.writeToDevice(*queue);
+    t_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     cross_entropy_error.createBuffer(*context,
                                      CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
-    
+
+    activations.writeToDevice(*queue);
+    activations_test.writeToDevice(*queue);
+    weights.writeToDevice(*queue);
+    t.writeToDevice(*queue);
+    t_test.writeToDevice(*queue);
+        
     // instantitate kernels
     openclKernels = new OpenCLKernels(*context, devices, 0, *queue);
     // ce = new OpenCLErrorReduce(*context, devices, *queue, y, t);
 };
 
-nn::~nn() {
-  //    delete ce;
+nn::~nn() {     
     delete openclKernels;
     delete queue;
     delete context;
@@ -201,8 +217,39 @@ void nn::FF() {
         C.set(numberOfTrainingData, elementsPerLayer[i+1], activations_offsets[i+1]);
         const bool setBias = (i != (N - 1));
         openclKernels->runMatrixMultiplicationSigmoid(A, B, C, setBias);
+        //A.data.readFromDevice(*queue);
+        //B.data.readFromDevice(*queue);
+        //C.data.readFromDevice(*queue);
+        //print(A, "A");
+        //print(B, "B");
+        //print(C, "C");
+        //exit(0);
     }
 }
+
+void nn::FF_test() {
+    const cl_uint N = numberOfLayers - 1;
+    
+    matrix_cl_float A(activations_test);
+    matrix_cl_float B(weights);
+    matrix_cl_float C(activations_test);
+    
+    for ( cl_uint i = 0; i < N; i++ ) {
+        A.set(numberOfTestData, elementsPerLayer[i], activations_test_offsets[i]);
+        B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
+        C.set(numberOfTestData, elementsPerLayer[i+1], activations_test_offsets[i+1]);
+        const bool setBias = (i != (N - 1));
+        openclKernels->runMatrixMultiplicationSigmoid(A, B, C, setBias);
+        //A.data.readFromDevice(*queue);
+        //B.data.readFromDevice(*queue);
+        //C.data.readFromDevice(*queue);
+        //print(A, "A");
+        //print(B, "B");
+        //print(C, "C");
+        //exit(0);
+    }
+}
+
 
 void nn::BP() {
     matrix_cl_float tm(t);
@@ -220,7 +267,7 @@ void nn::BP() {
               elementsPerLayer[last],
               deltas_offsets[last]);
 
-    openclKernels->runElementWiseSubstract(tm, act, del_r);
+    openclKernels->runElementWiseSubstract(act, tm, del_r);
     
     for (cl_int i = numberOfLayers - 2; i > 0; i--) {
         del.set(numberOfTrainingData,
@@ -273,7 +320,7 @@ void nn::BP() {
 
         const bool sum = true;
         const cl_float learningRateOverTrainingData =
-                       learningRate/cl_float(numberOfTrainingData);
+                       -learningRate/cl_float(numberOfTrainingData);
         
         openclKernels->runMatrixMultiplicationSigmoid(
                             act,
@@ -311,10 +358,16 @@ void nn::train() {
         FF();
         cl_float ce = cross_entropy();
         if (epoch % printEpochs == 0) {
-            std::cout << "Epoch: " << epoch << "   CE: " << ce << std::endl;
+            std::cout << "Epoch: " << epoch << "   CE: " << ce;
+            FF_test();
+            cl_float ce = cross_entropy_test();
+            std::cout << "   Test CE: " << ce << std::endl;
         }
         if (ce < minError) {
-            std::cout << "Epoch: " << epoch << "   CE: " << ce << std::endl;
+            std::cout << "Epoch: " << epoch << "   CE: " << ce;
+            FF_test();
+            cl_float ce = cross_entropy_test();
+            std::cout << "   Test CE: " << ce << std::endl;
             break;
         }
         BP();
@@ -333,6 +386,20 @@ cl_float nn::cross_entropy() {
 
     return openclKernels->runCrossEntropy(tm, act, ce);
 }
+
+cl_float nn::cross_entropy_test() {
+    matrix_cl_float tm(t_test);
+    matrix_cl_float act(activations_test);
+    matrix_cl_float ce(cross_entropy_error);
+
+    const cl_uint elemLastLayer = elementsPerLayer[numberOfLayers-1];
+    
+    tm.set(numberOfTestData, elemLastLayer, 0);
+    act.set(numberOfTestData, elemLastLayer, activations_test_offsets[numberOfLayers-1]);
+
+    return openclKernels->runCrossEntropy(tm, act, ce);
+}
+
 
 void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
                                     const cl_uint nr_cols_A,

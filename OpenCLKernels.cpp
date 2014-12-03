@@ -17,6 +17,7 @@ OpenCLKernels::~OpenCLKernels() {
     delete elementWiseMultiplicationBySigmoidDerivativeKernel;
     delete crossEntropyKernelLocal;
     delete elementWiseSubstractKernel;
+    delete elementWiseSumKernel;
     delete matrixMultiplicationSigmoidKernel;
     delete program;
 }
@@ -64,10 +65,6 @@ void OpenCLKernels::opencl_init() {
       crossEntropyKernelLocal =
             new cl::Kernel(*program,
                            crossEntropyKernelLocal_name.c_str());
-
-//      transposeKernelLocal =
-//            new cl::Kernel(*program,
-//                           transposeKernelLocal_name.c_str());
       
       elementWiseMultiplicationBySigmoidDerivativeKernel =
             new cl::Kernel(*program,
@@ -358,5 +355,6 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
         ce += e[i];
     }
     
-    return -ce/(y.rows*y.cols);
+    //return -ce/(y.rows*y.cols);
+    return -ce/(y.rows);
 }
