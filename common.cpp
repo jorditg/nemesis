@@ -144,8 +144,9 @@ void print_vector(const std::vector<cl_float> &v,
                   cl_uint cols,
                   cl_uint offset = 0) {
   cl_uint lines = 0;
-  for (size_t i = offset; i < v.size(); i++) {
-    std::cout << boost::format("%5.5f") % v[i] << " ";
+  cl_uint end = rows*cols + offset;
+  for (size_t i = offset; i < end; i++) {
+    std::cout << boost::format("%5.6f") % v[i] << " ";
     if (!((i+1 - offset) % cols)) {
         std::cout << std::endl;
         lines++;

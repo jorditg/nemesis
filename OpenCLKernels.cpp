@@ -14,6 +14,7 @@
 #include "common.hpp"
 
 OpenCLKernels::~OpenCLKernels() {
+    delete softmaxKernelLocal;
     delete elementWiseMultiplicationBySigmoidDerivativeKernel;
     delete crossEntropyKernelLocal;
     delete elementWiseSubstractKernel;
@@ -69,6 +70,9 @@ void OpenCLKernels::opencl_init() {
       elementWiseMultiplicationBySigmoidDerivativeKernel =
             new cl::Kernel(*program,
                            elementWiseMultiplicationBySigmoidDerivativeKernel_name.c_str());
+      softmaxKernelLocal =
+              new cl::Kernel(*program,
+                             softmaxKernelLocal_name.c_str());
       
     } catch(const cl::Error &e) {
         std::cout << e.err() << e.what() << std::endl;
@@ -358,3 +362,27 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     //return -ce/(y.rows*y.cols);
     return -ce/(y.rows);
 }
+
+void OpenCLKernels::runSoftMax(
+            matrix_cl_float const &activations) {
+  
+    assert(activations.cols % 4 == 0 && activations.rows % 4 == 0);
+    
+    size_t local_size[1] {activations.cols / 4};
+    size_t global_size[1] = {local_size[0] * activations.rows};
+    
+    softmaxKernelLocal->setArg(0, *(activations.data.deviceData));
+    softmaxKernelLocal->setArg(1,
+                               cl::Local(local_size[0] * 4 * sizeof(cl_float)));
+    softmaxKernelLocal->setArg(2, activations.offset/4);
+    
+    const cl::NDRange offset = cl::NullRange;
+    const cl::NDRange global(global_size[0]);
+    const cl::NDRange local(local_size[0]);
+    queue.enqueueNDRangeKernel(*softmaxKernelLocal,
+                               offset,
+                               global,
+                               local);
+    queue.finish();
+}
+

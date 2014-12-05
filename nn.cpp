@@ -186,37 +186,32 @@ nn::~nn() {
     delete context;
 }
 
-//void nn::transposeWeights() {
-//    // done in host
-//    weights.readFromDevice(*queue);
-//    int offset = 0;
-//    for (int l = 0; l < numberOfLayers - 1; l++) {
-//        for (int i = 0; i < elementsPerLayer[l] ; i++) {
-//            for (int j = 0; j < elementsPerLayer[l+1]; j++) {
-//                weights_transposed.hostData[offset + i +
-//                                            j*elementsPerLayer[l]] =
-//                    weights.hostData[offset + j +
-//                                     i*elementsPerLayer[l+1]];
-//            }
-//        }
-//        offset += elementsPerLayer[l]*elementsPerLayer[l+1];
-//    }
-//    weights_transposed.writeToDevice(*queue);
-//}
-
 void nn::FF() {
     const cl_uint N = numberOfLayers - 1;
     
     matrix_cl_float A(activations);
     matrix_cl_float B(weights);
     matrix_cl_float C(activations);
-    
+    bool setBias = true;
+    bool calcSigmoid = true;
     for ( cl_uint i = 0; i < N; i++ ) {
         A.set(numberOfTrainingData, elementsPerLayer[i], activations_offsets[i]);
         B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
         C.set(numberOfTrainingData, elementsPerLayer[i+1], activations_offsets[i+1]);
-        const bool setBias = (i != (N - 1));
-        openclKernels->runMatrixMultiplicationSigmoid(A, B, C, setBias);
+        if(i == N-1) {
+            setBias = false;
+            calcSigmoid = false;
+        }
+        openclKernels->
+                  runMatrixMultiplicationSigmoid(A, B, C, setBias, calcSigmoid);
+        if(i == N-1) {
+            // C.data.readFromDevice(*queue);
+            // print(C, "C");
+            // TESTED. WORKING.
+            openclKernels->runSoftMax(C);
+            //C.data.readFromDevice(*queue);
+            //print(C, "C");
+        }
         //A.data.readFromDevice(*queue);
         //B.data.readFromDevice(*queue);
         //C.data.readFromDevice(*queue);
@@ -233,13 +228,21 @@ void nn::FF_test() {
     matrix_cl_float A(activations_test);
     matrix_cl_float B(weights);
     matrix_cl_float C(activations_test);
-    
+    bool setBias = true;
+    bool calcSigmoid = true;
     for ( cl_uint i = 0; i < N; i++ ) {
         A.set(numberOfTestData, elementsPerLayer[i], activations_test_offsets[i]);
         B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
         C.set(numberOfTestData, elementsPerLayer[i+1], activations_test_offsets[i+1]);
-        const bool setBias = (i != (N - 1));
-        openclKernels->runMatrixMultiplicationSigmoid(A, B, C, setBias);
+        if(i == N-1) {
+            setBias = false;
+            calcSigmoid = false;
+        }
+        openclKernels->
+                  runMatrixMultiplicationSigmoid(A, B, C, setBias, calcSigmoid);
+        if(i == N-1) {
+            openclKernels->runSoftMax(C);        
+        }
         //A.data.readFromDevice(*queue);
         //B.data.readFromDevice(*queue);
         //C.data.readFromDevice(*queue);
@@ -248,6 +251,84 @@ void nn::FF_test() {
         //print(C, "C");
         //exit(0);
     }
+}
+
+void nn::print_classification_results_test() {
+    t_test.readFromDevice(*queue);
+    activations_test.readFromDevice(*queue);
+    const cl_uint N = elementsPerLayer[elementsPerLayer.size()-1];
+    const cl_uint off = activations_test_offsets[numberOfLayers-1];
+    std::vector<cl_float> &v = t_test.hostData;
+    std::vector<cl_float> &w = activations_test.hostData;
+    cl_uint good = 0;
+    cl_uint bad = 0;    
+    
+    for(cl_uint i = 0; i < numberOfTestData; i++) {
+        cl_float max1 = 0.0f;
+        cl_uint pos1 = 0;
+        for(cl_uint j = 0; j < N; j++) {
+            if(v[i*N+j] > max1) {
+                pos1 = j;
+                max1 = v[i*N+j];
+            }
+        }
+        cl_float max2 = 0.0f;
+        cl_uint pos2 = 0;
+        for(cl_uint j = 0; j < N; j++) {
+            if(w[off+i*N+j] > max2) {
+                pos2 = j;
+                max2 = w[off+i*N+j];
+            }
+        }
+        if(pos1 == pos2) {
+            good++;
+        } else {
+            bad++;
+        }
+    }
+    
+    std::cout << "Test: ";
+    std::cout << "well clasified: " << good << " of " << good + bad;
+    std::cout << " " << float(good)/float(good+bad)*100 << "% of well classified" << std::endl;
+}
+
+void nn::print_classification_results_train() {
+    t.readFromDevice(*queue);
+    activations.readFromDevice(*queue);
+    const cl_uint N = elementsPerLayer[elementsPerLayer.size()-1];
+    const cl_uint off = activations_offsets[numberOfLayers-1];
+    std::vector<cl_float> &v = t.hostData;
+    std::vector<cl_float> &w = activations.hostData;
+    cl_uint good = 0;
+    cl_uint bad = 0;    
+    
+    for(cl_uint i = 0; i < numberOfTrainingData; i++) {
+        cl_float max1 = 0.0f;
+        cl_uint pos1 = 0;
+        for(cl_uint j = 0; j < N; j++) {
+            if(v[i*N + j] > max1) {
+                pos1 = j;
+                max1 = v[i*N + j];
+            }
+        }
+        cl_float max2 = 0.0f;
+        cl_uint pos2 = 0;
+        for(cl_uint j = 0; j < N; j++) {
+            if(w[off+i*N+j] > max2) {
+                pos2 = j;
+                max2 = w[off+i*N+j];
+            }
+        }
+        if(pos1 == pos2) {
+            good++;
+        } else {
+            bad++;
+        }
+    }
+    
+    std::cout << "Train: ";
+    std::cout << "well clasified: " << good << " of " << good + bad;
+    std::cout << " " << float(good)/float(good+bad)*100 << "% of well classified" << std::endl;
 }
 
 
@@ -362,12 +443,15 @@ void nn::train() {
             FF_test();
             cl_float ce = cross_entropy_test();
             std::cout << "   Test CE: " << ce << std::endl;
+            print_classification_results_train();
+            print_classification_results_test();
         }
         if (ce < minError) {
             std::cout << "Epoch: " << epoch << "   CE: " << ce;
             FF_test();
             cl_float ce = cross_entropy_test();
             std::cout << "   Test CE: " << ce << std::endl;
+            print_classification_results_test();
             break;
         }
         BP();
@@ -383,6 +467,11 @@ cl_float nn::cross_entropy() {
     
     tm.set(numberOfTrainingData, elemLastLayer, 0);
     act.set(numberOfTrainingData, elemLastLayer, activations_offsets[numberOfLayers-1]);
+    
+    //act.data.readFromDevice(*queue);
+    //tm.data.readFromDevice(*queue);
+    //print(act, "y");
+    //print(tm, "t");
 
     return openclKernels->runCrossEntropy(tm, act, ce);
 }

@@ -30,6 +30,8 @@ float4 sigmoid(float4 x)
     return ones / ( ones + exp( -x ) ); 
 }
 
+
+// softmax has the same derivative. that's why the same function is valid for it
 float4 sigmoid_derivative(float4 sigmoid)
 {
   return sigmoid*(ones - sigmoid);
@@ -331,3 +333,33 @@ __kernel void crossEntropyKernelLocal(__global float4* t,
 // Al finalizar la función se obtiene un vector de output de tamaño igual al número de grupos
 // que hay que sumar, obteniendo el resultado final
 
+/*
+ * Calculates a softmax of local_size float4's => local_size*4 float elements 
+ * Required local_size = number of output elements of the softmax to calculate divided by 4
+ * Required global size = all the elements / 4 (floats4)
+ */
+__kernel void softmaxKernelLocal(__global float4* z, 
+                                 __local float4* sdata,
+                                 int offset_z)
+{
+    // load shared mem
+    unsigned int lid = get_local_id(0);
+    unsigned int gid = get_global_id(0);
+
+    unsigned int localSize = get_local_size(0);
+    
+    unsigned int idx = offset_z + gid;
+    
+    sdata[lid] = exp(z[idx]);
+    barrier(CLK_LOCAL_MEM_FENCE);
+    
+    // calculate the sum of all the elements
+    float4 sum = (float4) (0.0f);
+    for(int i = 0; i < localSize; i++) {
+        sum += sdata[i];
+    }
+    
+    float total = sum.x + sum.y + sum.z + sum.w;
+    
+    z[idx] = sdata[lid]/total;
+}

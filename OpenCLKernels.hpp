@@ -66,6 +66,9 @@ class OpenCLKernels {
     void runElementWiseMultiplicationBySigmoidDerivativeKernel(
             matrix_cl_float const &deltas,
             matrix_cl_float const &activations);
+    
+    void runSoftMax(
+            matrix_cl_float const &activations);
   private:
     const std::string sourceFile = "NN_Kernels.cl";
     
@@ -101,6 +104,10 @@ class OpenCLKernels {
     cl::Kernel *elementWiseMultiplicationBySigmoidDerivativeKernel;
     const std::string elementWiseMultiplicationBySigmoidDerivativeKernel_name =
                       "elementWiseMultiplicationBySigmoidDerivativeKernel";
+    
+    cl::Kernel *softmaxKernelLocal;
+    const std::string softmaxKernelLocal_name =
+                      "softmaxKernelLocal";
     
     bool lds;
     
