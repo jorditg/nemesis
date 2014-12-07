@@ -265,12 +265,14 @@ __kernel void elementWiseSumKernel(__global float4* t,
                                    __global float4* delta,
                                    int offset_t,
                                    int offset_y,
-                                   int offset_delta)
+                                   int offset_delta,
+                                   float mult_t,
+                                   float mult_y)
 {
     int i = get_global_id(0);
     
-    float4 a = t[offset_t + i];
-    float4 b = y[offset_y + i];
+    float4 a = mult_t*t[offset_t + i];
+    float4 b = mult_y*y[offset_y + i];
     
     delta[offset_delta + i] =  a + b;
 }

@@ -205,20 +205,9 @@ void nn::FF() {
         openclKernels->
                   runMatrixMultiplicationSigmoid(A, B, C, setBias, calcSigmoid);
         if(i == N-1) {
-            // C.data.readFromDevice(*queue);
-            // print(C, "C");
             // TESTED. WORKING.
             openclKernels->runSoftMax(C);
-            //C.data.readFromDevice(*queue);
-            //print(C, "C");
         }
-        //A.data.readFromDevice(*queue);
-        //B.data.readFromDevice(*queue);
-        //C.data.readFromDevice(*queue);
-        //print(A, "A");
-        //print(B, "B");
-        //print(C, "C");
-        //exit(0);
     }
 }
 
@@ -241,17 +230,12 @@ void nn::FF_test() {
         openclKernels->
                   runMatrixMultiplicationSigmoid(A, B, C, setBias, calcSigmoid);
         if(i == N-1) {
-            openclKernels->runSoftMax(C);        
+            // TESTED. WORKING.
+            openclKernels->runSoftMax(C);
         }
-        //A.data.readFromDevice(*queue);
-        //B.data.readFromDevice(*queue);
-        //C.data.readFromDevice(*queue);
-        //print(A, "A");
-        //print(B, "B");
-        //print(C, "C");
-        //exit(0);
     }
 }
+
 
 void nn::print_classification_results_test() {
     t_test.readFromDevice(*queue);
@@ -341,6 +325,7 @@ void nn::BP() {
     matrix_cl_float del_r(deltas);
 
     // first of all calculate the deltas of the last layer
+    // delta {output_layer} = (y - t)
     const cl_uint last = numberOfLayers - 1;
     tm.set(numberOfTrainingData, elementsPerLayer[last], 0);
     act.set(tm.rows, tm.cols, activations_offsets[last]);
@@ -350,6 +335,11 @@ void nn::BP() {
 
     openclKernels->runElementWiseSubstract(act, tm, del_r);
     
+    
+    // next calculate deltas for next layers
+    // delta {previous layer} = delta {next_layer} * weights * activation_function_derivative
+    // In case of sigmoid and softmax:
+    // activation_function_derivative = activation * ( 1 - activation ) 
     for (cl_int i = numberOfLayers - 2; i > 0; i--) {
         del.set(numberOfTrainingData,
                 elementsPerLayer[i+1],
@@ -380,7 +370,7 @@ void nn::BP() {
 
         //print(act, "act");
         //del_r.data.readFromDevice(*queue);
-        //print(del_r, "delta_r*Wt.*s*(s-1)");
+        //print(del_r, "delta_r*Wt.*s*(1-s)");
     }
     
     // Weight actualization
@@ -424,6 +414,30 @@ void nn::BP() {
     }
 }
 
+void nn::NAG_preupdate()
+{
+    matrix_cl_float wei(weights);
+    matrix_cl_float wei_inc(increment_weights);
+
+    // Weight actualization
+    for (cl_int i = numberOfLayers - 2; i >= 0; i--) {
+        // act transposed
+        wei.set(elementsPerLayer[i], elementsPerLayer[i+1],
+                weights_offsets[i]);
+        wei_inc.set(elementsPerLayer[i], elementsPerLayer[i+1],
+                    weights_offsets[i]);
+        
+       
+        openclKernels->runElementWiseSum(
+                            wei,
+                            wei_inc,
+                            wei,
+                            1.0f,
+                            momentum);        
+    }
+}
+
+
 void nn::train() {
     //minibatch_generator mg(numberOfTrainingData, minibatchSize, minibatch_idx_host);
     
@@ -436,6 +450,10 @@ void nn::train() {
         // minibatch_idx.writeToDevice(*queue);
         // launch next minibatch calculation
         //fut = std::async(&minibatch_generator::generate, &mg);
+        if(NAG) {
+            NAG_preupdate();
+        }
+        
         FF();
         cl_float ce = cross_entropy();
         if (epoch % printEpochs == 0) {
@@ -451,6 +469,7 @@ void nn::train() {
             FF_test();
             cl_float ce = cross_entropy_test();
             std::cout << "   Test CE: " << ce << std::endl;
+            print_classification_results_train();
             print_classification_results_test();
             break;
         }

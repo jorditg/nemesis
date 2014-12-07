@@ -22,8 +22,10 @@ class nn {
     cl_uint numberOfTestData;
     cl_uint numberOfLayers;
 
+    bool NAG = true;    // true uses Nesterov-accelerated gradient. 
+                        // false uses Classical Momentum
     cl_float learningRate = 0.27f;  // Typìcal value 0.3
-    cl_float momentum = 0.8f;      // Typical value 0.9
+    cl_float momentum = 0.9f;      // Typical value 0.9
     size_t maxEpochs = 100000;      // Typical value 5000000
     cl_float minError = 0.001f;     // Typical value 0.01
     //cl_uint minibatchSize = 256;     
@@ -110,6 +112,8 @@ class nn {
     
     cl_float cross_entropy();   // CE training calculation   
     cl_float cross_entropy_test();  // CE test calculation
+
+    void NAG_preupdate();
     
     void BP();  // Backpropagation calculation (all sigmoid))
     

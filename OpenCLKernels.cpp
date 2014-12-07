@@ -219,7 +219,9 @@ void OpenCLKernels::runElementWiseSubstract(
 void OpenCLKernels::runElementWiseSum(
             matrix_cl_float const &a,
             matrix_cl_float const &b,
-            matrix_cl_float &c) {
+            matrix_cl_float &c,
+            cl_float mult_a,
+            cl_float mult_b) {
 
     assert(a.cols == b.cols && a.rows == b.rows &&
            a.cols == c.cols && a.rows == c.rows);
@@ -242,6 +244,8 @@ void OpenCLKernels::runElementWiseSum(
     elementWiseSumKernel->setArg(3, a.offset/4);
     elementWiseSumKernel->setArg(4, b.offset/4);
     elementWiseSumKernel->setArg(5, c.offset/4);
+    elementWiseSumKernel->setArg(6, mult_a);
+    elementWiseSumKernel->setArg(7, mult_b);
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);

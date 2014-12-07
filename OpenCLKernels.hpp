@@ -49,9 +49,11 @@ class OpenCLKernels {
             matrix_cl_float &e);
     
     void runElementWiseSum(
-            matrix_cl_float const &t,
-            matrix_cl_float const &y,
-            matrix_cl_float &e);
+            matrix_cl_float const &a,
+            matrix_cl_float const &b,
+            matrix_cl_float &c,
+            cl_float mult_a = 1.0f,
+            cl_float mult_b = 1.0f);
     
     
     cl_float runCrossEntropy(
