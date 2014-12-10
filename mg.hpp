@@ -21,13 +21,28 @@ class minibatch_generator {
     std::vector<bool> selected;
     std::vector<cl_uint> index;
     
-    std::vector<cl_uint> & dest_vector;
-
+    std::vector<cl_uint> minibatch;
+    
+    std::vector<cl_float> &from1;
+    std::vector<cl_float> &to1;
+    cl_uint stride1;
+    std::vector<cl_float> &from2;
+    std::vector<cl_float> &to2;
+    cl_uint stride2;
+    
+    void generate();
 public:
-    minibatch_generator(unsigned source, 
-                        unsigned dest, 
-                        std::vector<cl_uint> &destVec);
-    std::vector<cl_uint> & generate();
+    minibatch_generator(cl_uint total_data, 
+                        cl_uint minibatch_size,
+                        std::vector<cl_float> &from1,
+                        std::vector<cl_float> &to1,
+                        cl_uint stride1,
+                        std::vector<cl_float> &from2,
+                        std::vector<cl_float> &to2,
+                        cl_uint stride2
+                       );
+   
+    void load_generated_minibatch();
 };
 
 #endif	/* MINIBATCH_GENERATOR_HPP */

@@ -93,8 +93,8 @@ nn::nn(const std::string &nn_file,
     load_nn_data(nn_file, numberOfLayers, elementsPerLayer);
     // load input data into host memory
     load_csv_data(train_file,
-                  activations.hostData,
-                  t.hostData,
+                  training_data,
+                  training_data_output,
                   numberOfTrainingData,
                   elementsPerLayer[0],
                   elementsPerLayer[numberOfLayers-1]);
@@ -114,16 +114,15 @@ nn::nn(const std::string &nn_file,
         numberOfNeurons += elementsPerLayer[i];
     }
     numberOfNeurons += elementsPerLayer[numberOfLayers-1];
-    
-    //minibatch_idx.hostData.resize(minibatchSize);
-    
-    activations.hostData.resize(numberOfNeurons*numberOfTrainingData);
+      
+    activations.hostData.resize(numberOfNeurons*minibatchSize);
+    t.hostData.resize(elementsPerLayer[numberOfLayers-1]*minibatchSize);
     activations_test.hostData.resize(numberOfNeurons*numberOfTestData);
     weights.hostData.resize(numberOfWeights);
     increment_weights.hostData.resize(numberOfWeights);
     // there are no deltas in input layer
     deltas.hostData.resize((numberOfNeurons
-                            -elementsPerLayer[0])*numberOfTrainingData);
+                            -elementsPerLayer[0])*minibatchSize);
     cross_entropy_error.hostData.resize(CROSS_ENTROPY_ERROR_SIZE);
 
     // calculate offsets of every layer inside the vectors
@@ -138,7 +137,7 @@ nn::nn(const std::string &nn_file,
     deltas_offsets[1] = 0;
     for (cl_uint i = 1; i < numberOfLayers; i++) {
       activations_offsets[i] = activations_offsets[i-1] +
-                               numberOfTrainingData*elementsPerLayer[i-1];
+                               minibatchSize*elementsPerLayer[i-1];
       activations_test_offsets[i] = activations_test_offsets[i-1] +
                                numberOfTestData*elementsPerLayer[i-1];
       weights_offsets[i] = weights_offsets[i-1] +
@@ -154,11 +153,7 @@ nn::nn(const std::string &nn_file,
     // Create OpenCL buffers for the matrices based on allocated memory regions
     // Create buffers with CL_MEM_USE_HOST_PTR to minimize copying and
     // model situation when matrices are hosted by some native library that
-    // uses OpenCL to accelerate calculations.
-    
-    // Create buffers and copy host contents
-    //minibatch_idx.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
-    
+    // uses OpenCL to accelerate calculations.  
     activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     activations_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
@@ -177,7 +172,6 @@ nn::nn(const std::string &nn_file,
         
     // instantitate kernels
     openclKernels = new OpenCLKernels(*context, devices, 0, *queue);
-    // ce = new OpenCLErrorReduce(*context, devices, *queue, y, t);
 };
 
 nn::~nn() {     
@@ -195,9 +189,9 @@ void nn::FF() {
     bool setBias = true;
     bool calcSigmoid = true;
     for ( cl_uint i = 0; i < N; i++ ) {
-        A.set(numberOfTrainingData, elementsPerLayer[i], activations_offsets[i]);
+        A.set(minibatchSize, elementsPerLayer[i], activations_offsets[i]);
         B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
-        C.set(numberOfTrainingData, elementsPerLayer[i+1], activations_offsets[i+1]);
+        C.set(minibatchSize, elementsPerLayer[i+1], activations_offsets[i+1]);
         if(i == N-1) {
             setBias = false;
             calcSigmoid = false;
@@ -286,7 +280,7 @@ void nn::print_classification_results_train() {
     cl_uint good = 0;
     cl_uint bad = 0;    
     
-    for(cl_uint i = 0; i < numberOfTrainingData; i++) {
+    for(cl_uint i = 0; i < minibatchSize; i++) {
         cl_float max1 = 0.0f;
         cl_uint pos1 = 0;
         for(cl_uint j = 0; j < N; j++) {
@@ -327,9 +321,9 @@ void nn::BP() {
     // first of all calculate the deltas of the last layer
     // delta {output_layer} = (y - t)
     const cl_uint last = numberOfLayers - 1;
-    tm.set(numberOfTrainingData, elementsPerLayer[last], 0);
+    tm.set(minibatchSize, elementsPerLayer[last], 0);
     act.set(tm.rows, tm.cols, activations_offsets[last]);
-    del_r.set(numberOfTrainingData,
+    del_r.set(minibatchSize,
               elementsPerLayer[last],
               deltas_offsets[last]);
 
@@ -341,10 +335,10 @@ void nn::BP() {
     // In case of sigmoid and softmax:
     // activation_function_derivative = activation * ( 1 - activation ) 
     for (cl_int i = numberOfLayers - 2; i > 0; i--) {
-        del.set(numberOfTrainingData,
+        del.set(minibatchSize,
                 elementsPerLayer[i+1],
                 deltas_offsets[i+1]);
-        del_r.set(numberOfTrainingData,
+        del_r.set(minibatchSize,
                   elementsPerLayer[i],
                   deltas_offsets[i]);
         // wei transposed
@@ -362,7 +356,7 @@ void nn::BP() {
         //print(del, "delta");
         //print(del_r, "delta*Wt");
         
-        act.set(numberOfTrainingData,
+        act.set(minibatchSize,
                 elementsPerLayer[i],
                 activations_offsets[i]);
         openclKernels->
@@ -376,9 +370,9 @@ void nn::BP() {
     // Weight actualization
     for (cl_int i = numberOfLayers - 2; i >= 0; i--) {
         // act transposed
-        act.set(elementsPerLayer[i], numberOfTrainingData,
+        act.set(elementsPerLayer[i], minibatchSize,
                 activations_offsets[i], true);
-        del.set(numberOfTrainingData, elementsPerLayer[i+1],
+        del.set(minibatchSize, elementsPerLayer[i+1],
                 deltas_offsets[i+1]);
         wei.set(elementsPerLayer[i], elementsPerLayer[i+1],
                 weights_offsets[i]);
@@ -391,7 +385,7 @@ void nn::BP() {
 
         const bool sum = true;
         const cl_float learningRateOverTrainingData =
-                       -learningRate/cl_float(numberOfTrainingData);
+                       -learningRate/cl_float(minibatchSize);
         
         openclKernels->runMatrixMultiplicationSigmoid(
                             act,
@@ -439,17 +433,26 @@ void nn::NAG_preupdate()
 
 
 void nn::train() {
-    //minibatch_generator mg(numberOfTrainingData, minibatchSize, minibatch_idx_host);
+    minibatch_generator mg(numberOfTrainingData, 
+                           minibatchSize,
+                           training_data,
+                           activations.hostData,
+                           elementsPerLayer[0],
+                           training_data_output,
+                           t.hostData,
+                           elementsPerLayer[numberOfLayers-1]
+                           );
+    const size_t minibatch_size_bytes = minibatchSize*elementsPerLayer[0]*sizeof(cl_float);
     
-    //  auto fut = std::async(&minibatch_generator::generate, &mg);
+    auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
     
     for (size_t epoch = 0; epoch < maxEpochs; epoch++) {
         // wait for minibatch thread to finish
-        //fut.get();
+        fut.get();
         // load to device the thread calculated minibatch
-        // minibatch_idx.writeToDevice(*queue);
+        activations.writeToDevice(*queue, minibatch_size_bytes);
         // launch next minibatch calculation
-        //fut = std::async(&minibatch_generator::generate, &mg);
+        fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
         if(NAG) {
             NAG_preupdate();
         }
@@ -474,6 +477,8 @@ void nn::train() {
             break;
         }
         BP();
+        
+        update_momentum_rule_Hinton2013(epoch);
     }
 }
 
@@ -484,8 +489,8 @@ cl_float nn::cross_entropy() {
 
     const cl_uint elemLastLayer = elementsPerLayer[numberOfLayers-1];
     
-    tm.set(numberOfTrainingData, elemLastLayer, 0);
-    act.set(numberOfTrainingData, elemLastLayer, activations_offsets[numberOfLayers-1]);
+    tm.set(minibatchSize, elemLastLayer, 0);
+    act.set(minibatchSize, elemLastLayer, activations_offsets[numberOfLayers-1]);
     
     //act.data.readFromDevice(*queue);
     //tm.data.readFromDevice(*queue);

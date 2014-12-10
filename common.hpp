@@ -46,11 +46,13 @@ struct host_device_memory_map {
       queue.finish();
   }
 
-  inline void writeToDevice(const cl::CommandQueue & queue) {
+  inline void writeToDevice(const cl::CommandQueue & queue, size_t bytes = 0) {
+      // If bytes == 0 writes the whole size
+      const size_t write_size = (bytes==0)?hostData.size()*sizeof(cl_float):bytes;
       queue.enqueueWriteBuffer(*deviceData,
                                CL_TRUE, 
                                0,
-                               hostData.size()*sizeof(cl_float),
+                               write_size,
                                &hostData[0]);
       queue.finish();
   }

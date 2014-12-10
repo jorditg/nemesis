@@ -8,6 +8,7 @@
 
 #include <vector>
 #include <string>
+#include <math.h> 
 
 #include "common.hpp"
 #include "mg.hpp"
@@ -20,11 +21,13 @@ class nn {
     cl_uint numberOfWeights;    
     cl_uint numberOfTrainingData;
     cl_uint numberOfTestData;
-    cl_uint numberOfLayers;
+    cl_uint numberOfLayers;    
 
     bool NAG = true;    // true uses Nesterov-accelerated gradient. 
                         // false uses Classical Momentum
-    cl_float learningRate = 0.27f;  // Typìcal value 0.3
+    
+    cl_uint minibatchSize = 256;
+    cl_float learningRate = 0.01f;  // Typìcal value 0.3
     cl_float momentum = 0.9f;      // Typical value 0.9
     size_t maxEpochs = 100000;      // Typical value 5000000
     cl_float minError = 0.001f;     // Typical value 0.01
@@ -33,6 +36,10 @@ class nn {
     size_t printEpochs = 100;      // Typical value 1000
     
     std::vector<cl_uint> elementsPerLayer;
+    
+    // Whole training data set
+    std::vector<cl_float> training_data;
+    std::vector<cl_float> training_data_output;
     
     // activations of all the neurons for all the training data for one epoch
     std::vector<cl_float> activations_host;
@@ -57,9 +64,7 @@ class nn {
     std::vector<cl_uint> activations_test_offsets;
     std::vector<cl_uint> weights_offsets;
     std::vector<cl_uint> deltas_offsets;
-    
-    //std::vector<cl_uint> minibatch_idx_host;
-    
+      
     // classes for mapping the host memory with the device memory
     host_device_memory_map<cl_float> activations;
     host_device_memory_map<cl_float> activations_test;
@@ -78,7 +83,20 @@ class nn {
     cl::CommandQueue *queue;   // unique OpenCL command queue;
 
     OpenCLKernels *openclKernels;
-        
+    
+    /*
+     * Momentum update rule extracted from "On the importance of initialization and momentum in deep learning",
+     * Hinton et al. 2013.
+     * According to this paper:
+     * momentum_max is chosen between 0.999, 0.995, 0.99, 0.9 and 0
+     * learning rate is chosen between 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001
+     */
+    inline void update_momentum_rule_Hinton2013(cl_uint t) {
+        const cl_float momentum_max = 0.9;   // Values used: 0.999, 0.995, 0.99, 0.9, 0
+        const cl_float new_momentum = 1.0f - std::pow( 2.0f, -1.0f - std::log2(t / 250.0f + 1.0f));
+        momentum = std::min(momentum_max, new_momentum);                            
+    }
+    
  public:
     
     explicit nn(const std::string &nn_file,
