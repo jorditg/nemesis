@@ -37,8 +37,8 @@ class OpenCLKernels {
             matrix_cl_float const &A,
             matrix_cl_float const &B,
             matrix_cl_float const &C,
-            bool setBias = true,
-            bool calcSigmoid = true,
+            matrix_cl_float * bias = nullptr,
+            bool calcSigmoid = false,
             bool sumToC = false,
             cl_float multPrevVal = 1.0f,
             cl_float multSum = 1.0f);
@@ -71,6 +71,10 @@ class OpenCLKernels {
     
     void runSoftMax(
             matrix_cl_float const &activations);
+    
+    void runRowSum(
+            matrix_cl_float &A, 
+            matrix_cl_float &result);
   private:
     const std::string sourceFile = "NN_Kernels.cl";
     
@@ -110,6 +114,10 @@ class OpenCLKernels {
     cl::Kernel *softmaxKernelLocal;
     const std::string softmaxKernelLocal_name =
                       "softmaxKernelLocal";
+    
+    cl::Kernel *rowSumKernel;
+    const std::string rowSumKernel_name =
+                      "rowSumKernel";    
     
     bool lds;
     

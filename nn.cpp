@@ -16,62 +16,15 @@
 #include "OpenCLKernels.hpp"
 #include "common.hpp"
 
-/**
-
- * Sparse random initialization (Martens, 2010)
-
- */
-
-void nn::populate_sparse_weights() {
-  boost::mt19937 rng;
-  boost::normal_distribution<> nd(0.0f, 1.0f);
-  boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > var_nor(rng, nd);
-
-  const cl_uint init_elements = 15;
-
-  for (std::vector<cl_float>::iterator it = weights.hostData.begin();
-       it != weights.hostData.end(); ++it)
-    *it = 0.0f;
-
-  for(cl_uint i = 1; i < numberOfLayers; i++) {
-      boost::random::uniform_real_distribution<> dist(0, elementsPerLayer[i-1]-1);
-      for(cl_uint to_idx = 0; to_idx < elementsPerLayer[i]; to_idx++) {         
-          for(cl_uint k = 0; k < init_elements; k++) {
-              const cl_uint from_idx = dist(rng);
-              const cl_uint idx = weights_offsets[i-1] + 
-                                  elementsPerLayer[i] * from_idx + 
-                                  to_idx;
-              weights.hostData[idx] = var_nor();              
-          }
-          // set biases to 0
-          weights.hostData[weights_offsets[i-1] + to_idx] = 0.0f;
-      }
-  }
-}
-
-void nn::populate_random_weights(const cl_float min, const cl_float max) {
-  boost::random::mt19937 gen;
-  boost::random::uniform_real_distribution<> dist(min, max);
-
-  for (std::vector<cl_float>::iterator it = weights.hostData.begin();
-       it != weights.hostData.end(); ++it)
-    *it = dist(gen);
-}
-
-void nn::populate_fixed_weights(const cl_float val) {
-  
-  for (std::vector<cl_float>::iterator it = weights.hostData.begin() ;
-       it != weights.hostData.end(); ++it)
-    *it = val;
-}
-
 nn::nn(const std::string &nn_file,
        const std::string &train_file,
        const std::string &test_file)
               : activations(activations_host),
                 activations_test(activations_test_host),
+                bias(bias_host),
                 weights(weights_host),
                 increment_weights(increment_weights_host),
+                increment_bias(increment_bias_host),
                 deltas(deltas_host),
                 t(t_host),
                 t_test(t_test_host),
@@ -115,11 +68,13 @@ nn::nn(const std::string &nn_file,
     }
     numberOfNeurons += elementsPerLayer[numberOfLayers-1];
       
-    activations.hostData.resize(numberOfNeurons*minibatchSize);
-    t.hostData.resize(elementsPerLayer[numberOfLayers-1]*minibatchSize);
-    activations_test.hostData.resize(numberOfNeurons*numberOfTestData);
+    activations.hostData.resize(numberOfNeurons * minibatchSize);
+    t.hostData.resize(elementsPerLayer[numberOfLayers-1] * minibatchSize);
+    activations_test.hostData.resize(numberOfNeurons * numberOfTestData);
+    bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
     weights.hostData.resize(numberOfWeights);
     increment_weights.hostData.resize(numberOfWeights);
+    increment_bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
     // there are no deltas in input layer
     deltas.hostData.resize((numberOfNeurons
                             -elementsPerLayer[0])*minibatchSize);
@@ -129,10 +84,12 @@ nn::nn(const std::string &nn_file,
     activations_offsets.resize(numberOfLayers);
     activations_test_offsets.resize(numberOfLayers);
     deltas_offsets.resize(numberOfLayers);
-    weights_offsets.resize(numberOfLayers-1);
+    weights_offsets.resize(numberOfLayers - 1);
+    bias_offsets.resize(numberOfLayers - 1);
     activations_offsets[0] = 0;
     activations_test_offsets[0] = 0;
     weights_offsets[0] = 0;
+    bias_offsets[0] = 0;
     deltas_offsets[0] = 0;   // never used in the algorithm
     deltas_offsets[1] = 0;
     for (cl_uint i = 1; i < numberOfLayers; i++) {
@@ -142,6 +99,7 @@ nn::nn(const std::string &nn_file,
                                numberOfTestData*elementsPerLayer[i-1];
       weights_offsets[i] = weights_offsets[i-1] +
                            elementsPerLayer[i-1]*elementsPerLayer[i];
+      bias_offsets[i] = bias_offsets[i-1] + elementsPerLayer[i];
       deltas_offsets[i] = activations_offsets[i] - activations_offsets[1];
     }
     
@@ -156,8 +114,10 @@ nn::nn(const std::string &nn_file,
     // uses OpenCL to accelerate calculations.  
     activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     activations_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
+    bias.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     increment_weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
+    increment_bias.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     deltas.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     t_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
@@ -167,6 +127,7 @@ nn::nn(const std::string &nn_file,
     activations.writeToDevice(*queue);
     activations_test.writeToDevice(*queue);
     weights.writeToDevice(*queue);
+    bias.writeToDevice(*queue);
     t.writeToDevice(*queue);
     t_test.writeToDevice(*queue);
         
@@ -180,24 +141,75 @@ nn::~nn() {
     delete context;
 }
 
+/**
+
+ * Sparse random initialization (Martens, 2010)
+
+ */
+
+void nn::populate_sparse_weights() {
+  // suppose all the elements are 0 initialized only
+  // sets the differents from 0
+  boost::mt19937 rng;
+  boost::normal_distribution<> nd(0.0f, 1.0f);
+  boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > var_nor(rng, nd);
+
+  const cl_uint init_elements = 15;
+
+  for (std::vector<cl_float>::iterator it = weights.hostData.begin();
+       it != weights.hostData.end(); ++it)
+    *it = 0.0f;
+
+  for(cl_uint i = 1; i < numberOfLayers; i++) {
+      boost::random::uniform_real_distribution<> dist(0, elementsPerLayer[i-1]-1);
+      for(cl_uint to_idx = 0; to_idx < elementsPerLayer[i]; to_idx++) {         
+          for(cl_uint k = 0; k < init_elements; k++) {
+              const cl_uint from_idx = dist(rng);
+              const cl_uint idx = weights_offsets[i-1] + 
+                                  elementsPerLayer[i] * from_idx + 
+                                  to_idx;
+              weights.hostData[idx] = var_nor();              
+          }
+      }
+  }
+}
+
+void nn::populate_random_weights(const cl_float min, const cl_float max) {
+  boost::random::mt19937 gen;
+  boost::random::uniform_real_distribution<> dist(min, max);
+
+  for (std::vector<cl_float>::iterator it = weights.hostData.begin();
+       it != weights.hostData.end(); ++it)
+    *it = dist(gen);
+}
+
+void nn::populate_fixed_weights(const cl_float val) {
+  
+  for (std::vector<cl_float>::iterator it = weights.hostData.begin() ;
+       it != weights.hostData.end(); ++it)
+    *it = val;
+}
+
 void nn::FF() {
     const cl_uint N = numberOfLayers - 1;
     
     matrix_cl_float A(activations);
     matrix_cl_float B(weights);
     matrix_cl_float C(activations);
-    bool setBias = true;
+    matrix_cl_float bias_val(bias); // offset set to 0
     bool calcSigmoid = true;
     for ( cl_uint i = 0; i < N; i++ ) {
         A.set(minibatchSize, elementsPerLayer[i], activations_offsets[i]);
         B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
         C.set(minibatchSize, elementsPerLayer[i+1], activations_offsets[i+1]);
+        bias_val.offset = bias_offsets[i];
+        
         if(i == N-1) {
-            setBias = false;
             calcSigmoid = false;
         }
+        
         openclKernels->
-                  runMatrixMultiplicationSigmoid(A, B, C, setBias, calcSigmoid);
+                  runMatrixMultiplicationSigmoid(A, B, C, &bias_val, calcSigmoid);
         if(i == N-1) {
             // TESTED. WORKING.
             openclKernels->runSoftMax(C);
@@ -211,18 +223,19 @@ void nn::FF_test() {
     matrix_cl_float A(activations_test);
     matrix_cl_float B(weights);
     matrix_cl_float C(activations_test);
-    bool setBias = true;
+    matrix_cl_float bias_val(bias);
     bool calcSigmoid = true;
     for ( cl_uint i = 0; i < N; i++ ) {
         A.set(numberOfTestData, elementsPerLayer[i], activations_test_offsets[i]);
         B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
         C.set(numberOfTestData, elementsPerLayer[i+1], activations_test_offsets[i+1]);
+        bias_val.offset = bias_offsets[i];
         if(i == N-1) {
-            setBias = false;
             calcSigmoid = false;
         }
         openclKernels->
-                  runMatrixMultiplicationSigmoid(A, B, C, setBias, calcSigmoid);
+                  runMatrixMultiplicationSigmoid(A, B, C, &bias_val, calcSigmoid);
+        
         if(i == N-1) {
             // TESTED. WORKING.
             openclKernels->runSoftMax(C);
@@ -311,10 +324,15 @@ void nn::print_classification_results_train() {
 
 
 void nn::BP() {
+    const cl_float learningRateOverMinibatchSize =
+        learningRate/cl_float(minibatchSize);
+    
     matrix_cl_float tm(t);
     matrix_cl_float act(activations);
     matrix_cl_float wei(weights);
+    matrix_cl_float bias_val(bias);
     matrix_cl_float wei_inc(increment_weights);
+    matrix_cl_float bias_inc(increment_bias);
     matrix_cl_float del(deltas);
     matrix_cl_float del_r(deltas);
 
@@ -347,7 +365,7 @@ void nn::BP() {
                 weights_offsets[i],
                 true);
         openclKernels->
-            runMatrixMultiplicationSigmoid(del, wei, del_r, false, false);
+            runMatrixMultiplicationSigmoid(del, wei, del_r);
 
         //wei.data.readFromDevice(*queue);
         //del.data.readFromDevice(*queue);
@@ -378,27 +396,27 @@ void nn::BP() {
                 weights_offsets[i]);
         wei_inc.set(elementsPerLayer[i], elementsPerLayer[i+1],
                     weights_offsets[i]);
+        bias_inc.set(1, elementsPerLayer[i+1], bias_offsets[i]);
         
 
         //wei.data.readFromDevice(*queue);
         //print(wei, "Wei");
 
         const bool sum = true;
-        const cl_float learningRateOverTrainingData =
-                       -learningRate/cl_float(minibatchSize);
         
         openclKernels->runMatrixMultiplicationSigmoid(
                             act,
                             del,
                             wei_inc,
-                            false,
+                            nullptr,
                             false,
                             sum,
                             momentum,
-                            learningRateOverTrainingData);
+                            -learningRateOverMinibatchSize);
+        openclKernels->runRowSum(del, bias_inc);
         
         openclKernels->runElementWiseSum(wei, wei_inc, wei);
-
+        
         //act.data.readFromDevice(*queue);
         //del.data.readFromDevice(*queue);
         //wei.data.readFromDevice(*queue);
@@ -406,6 +424,15 @@ void nn::BP() {
         //print(del, "delta");
         //print(wei, "Wei = Wei + 1.0*ActT*delta");
     }
+    // lo sacamos fuera del loop para hacerlo correr una sola vez
+    bias_val.set(1, bias.hostData.size(), 0);
+    bias_inc.set(1, bias.hostData.size(), 0);
+    openclKernels->runElementWiseSum(bias_val, 
+                                     bias_inc, 
+                                     bias_val, 
+                                     momentum, 
+                                     -learningRateOverMinibatchSize);
+
 }
 
 void nn::NAG_preupdate()
@@ -558,9 +585,7 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     B.data.writeToDevice(*queue);
     
     openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C,
-                                           false, false,
-                                           false, false);
+            runMatrixMultiplicationSigmoid(A, B, C);
     C.data.readFromDevice(*queue);
 
     print(A, "A");
@@ -591,7 +616,7 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     B.data.writeToDevice(*queue);
     
     openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C, false, false);
+            runMatrixMultiplicationSigmoid(A, B, C);
     C.data.readFromDevice(*queue);
 
     print(A, "A", true);
@@ -622,7 +647,7 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     B.data.writeToDevice(*queue);
     
     openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C, false, false);
+            runMatrixMultiplicationSigmoid(A, B, C);
     C.data.readFromDevice(*queue);
 
     print(A, "A");
@@ -653,7 +678,7 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     B.data.writeToDevice(*queue);
     
     openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C, false, false);
+            runMatrixMultiplicationSigmoid(A, B, C);
     C.data.readFromDevice(*queue);
 
     print(A, "A", true);

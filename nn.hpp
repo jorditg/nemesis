@@ -45,10 +45,14 @@ class nn {
     std::vector<cl_float> activations_host;
     // activations of all the neurons for all the test data for one epoch
     std::vector<cl_float> activations_test_host;
+    // bias
+    std::vector<cl_float> bias_host;
     // weights of all neurons
     std::vector<cl_float> weights_host;
     // last weight increment calculated from back propagation
     std::vector<cl_float> increment_weights_host;
+    // last bias increment calculated from back propagation
+    std::vector<cl_float> increment_bias_host;    
     // deltas of all activation layers
     std::vector<cl_float> deltas_host;
     // output values of the training data
@@ -63,14 +67,17 @@ class nn {
     std::vector<cl_uint> activations_offsets;
     std::vector<cl_uint> activations_test_offsets;
     std::vector<cl_uint> weights_offsets;
+    std::vector<cl_uint> bias_offsets;
     std::vector<cl_uint> deltas_offsets;
       
     // classes for mapping the host memory with the device memory
     host_device_memory_map<cl_float> activations;
     host_device_memory_map<cl_float> activations_test;
+    host_device_memory_map<cl_float> bias;
     // inputs and calculated activations
     host_device_memory_map<cl_float> weights;  // all the weights of the NN
-    host_device_memory_map<cl_float> increment_weights;  // all the weights of the NN
+    host_device_memory_map<cl_float> increment_weights;  // all the inc weights of the NN
+    host_device_memory_map<cl_float> increment_bias;  // all the inc bias of the NN
     host_device_memory_map<cl_float> deltas;   // delta errors (Backprop)
     host_device_memory_map<cl_float> t;        // real output value
     host_device_memory_map<cl_float> t_test;        // real output value

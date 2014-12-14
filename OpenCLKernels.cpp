@@ -14,6 +14,7 @@
 #include "common.hpp"
 
 OpenCLKernels::~OpenCLKernels() {
+    delete rowSumKernel;
     delete softmaxKernelLocal;
     delete elementWiseMultiplicationBySigmoidDerivativeKernel;
     delete crossEntropyKernelLocal;
@@ -74,6 +75,10 @@ void OpenCLKernels::opencl_init() {
               new cl::Kernel(*program,
                              softmaxKernelLocal_name.c_str());
       
+      rowSumKernel =
+              new cl::Kernel(*program,
+                             rowSumKernel_name.c_str());
+      
     } catch(const cl::Error &e) {
         std::cout << e.err() << e.what() << std::endl;
     }
@@ -95,13 +100,12 @@ void OpenCLKernels::opencl_init() {
      runMatrixMultiplicationSigmoid(matrix_cl_float const &A,
                                     matrix_cl_float const &B,
                                     matrix_cl_float const &C,
-                                    bool setBias,
+                                    matrix_cl_float *bias,
                                     bool calcSigmoid,
                                     bool sumToC,
                                     cl_float multPrevVal,
-                                    cl_float multSum) {
-    
-    // It's correct, cols and rows are in this order
+                                    cl_float multSum) {  
+     // It's correct, cols and rows are in this order
     const size_t global_size[2] = {size_t(C.cols/4),
                                    size_t(C.rows/4)};
     
@@ -132,24 +136,25 @@ void OpenCLKernels::opencl_init() {
     matrixMultiplicationSigmoidKernel->setArg(0, *(A.data.deviceData));
     matrixMultiplicationSigmoidKernel->setArg(1, *(B.data.deviceData));
     matrixMultiplicationSigmoidKernel->setArg(2, *(C.data.deviceData));
-    matrixMultiplicationSigmoidKernel->setArg(3, A.cols);
-    matrixMultiplicationSigmoidKernel->setArg(4, A.offset/4);
-    matrixMultiplicationSigmoidKernel->setArg(5, B.offset/4);
-    matrixMultiplicationSigmoidKernel->setArg(6, C.offset/4);
-    matrixMultiplicationSigmoidKernel->setArg(7,
-          cl::Local((blocksize*4)*(blocksize*4)*sizeof(cl_float)));
-    matrixMultiplicationSigmoidKernel->setArg(8, setBias?1:0);
+    matrixMultiplicationSigmoidKernel->setArg(3, (bias==nullptr)?cl::Buffer(0):*(bias->data.deviceData));
+    matrixMultiplicationSigmoidKernel->setArg(4, A.cols);
+    matrixMultiplicationSigmoidKernel->setArg(5, A.offset/4);
+    matrixMultiplicationSigmoidKernel->setArg(6, B.offset/4);
+    matrixMultiplicationSigmoidKernel->setArg(7, C.offset/4);
+    matrixMultiplicationSigmoidKernel->setArg(8, (bias==nullptr)?0:bias->offset/4);
     matrixMultiplicationSigmoidKernel->setArg(9,
-          calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
+          cl::Local((blocksize*4)*(blocksize*4)*sizeof(cl_float)));
     matrixMultiplicationSigmoidKernel->setArg(10,
-          A.colMajorOrdered?1:0);    // A in column-major order
+          calcSigmoid?1:0);    // calculate sigmoid after matrix multiplication
     matrixMultiplicationSigmoidKernel->setArg(11,
-          B.colMajorOrdered?1:0);    // B in column-major order
+          A.colMajorOrdered?1:0);    // A in column-major order
     matrixMultiplicationSigmoidKernel->setArg(12,
-          sumToC?1:0);    // Result should be sumed to previous value of C or only assigned
+          B.colMajorOrdered?1:0);    // B in column-major order
     matrixMultiplicationSigmoidKernel->setArg(13,
-          multPrevVal); // If sumToC== true value that multiplies the result previous to sum
+          sumToC?1:0);    // Result should be sumed to previous value of C or only assigned
     matrixMultiplicationSigmoidKernel->setArg(14,
+          multPrevVal); // If sumToC== true value that multiplies the result previous to sum
+    matrixMultiplicationSigmoidKernel->setArg(15,
           multSum); // If sumToC== true value that multiplies the result previous to sum
     
     // -----------------------------------------------------------------------
@@ -390,3 +395,20 @@ void OpenCLKernels::runSoftMax(
     queue.finish();
 }
 
+void OpenCLKernels::runRowSum(
+            matrix_cl_float &A, 
+            matrix_cl_float &result) {
+    
+    size_t global_size[1] = {A.cols/4};
+    
+    rowSumKernel->setArg(0, *(A.data.deviceData));
+    rowSumKernel->setArg(1, *(result.data.deviceData));
+    rowSumKernel->setArg(2, A.rows);
+    
+    const cl::NDRange offset = cl::NullRange;
+    const cl::NDRange global(global_size[0]);
+    queue.enqueueNDRangeKernel(*rowSumKernel,
+                               offset,
+                               global);
+    queue.finish();
+}

@@ -4,6 +4,7 @@
 #define TILEY 4
 #define TILEY_SHIFT 2
 
+#define NULL 0
 
 __constant float4 ones = (float4) (1.0f);
 __constant float4 epsilon = (float4) (1E-30);
@@ -52,12 +53,13 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
                              (__global float4 *matrixA,
                               __global float4 *matrixB,
                               __global float4 *matrixC,
+                              __global float4 *bias,
                               int colsA,
                               int offsetA,
                               int offsetB,
                               int offsetC,
+                              int offsetBias,
                               __local float4 *blockA,
-                              int setBias,
                               int calcSigmoid,
                               int AInColMajorOrder,
                               int BInColMajorOrder,
@@ -197,22 +199,23 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
 	barrier(CLK_LOCAL_MEM_FENCE);
     }
     
+    // If bias not NULL
+    if(bias != NULL) {
+        const float4 bias_val = bias[offsetBias + gid0];
+
+        sum0 += bias_val;
+        sum1 += bias_val;
+        sum2 += bias_val;
+        sum3 += bias_val;
+    }
+
     // Calculate the sigmoid function of the sum
     if(calcSigmoid) {
-        sum0 = sigmoid(sum0);
+	sum0 = sigmoid(sum0);
         sum1 = sigmoid(sum1);
         sum2 = sigmoid(sum2);
         sum3 = sigmoid(sum3);
     }
-
-    // The first neuron of every layer exept the last one is the BIAS NEURON, that is to say that it always has a 1.0 output.
-    // setBias must be true for all the layers calculations except the last one (the output one).
-    if(setBias && get_global_id(0) == 0) {
-        sum0.x = 1.0f;
-        sum1.x = 1.0f;
-        sum2.x = 1.0f;
-        sum3.x = 1.0f;
-    }    
 
     // end of calculation of sigmoid function
     
@@ -240,19 +243,19 @@ __kernel void matrixMultiplicationSigmoidKernelLocal
  * The dimension should be the total number of elements divided by 4
  * This function is used to calculate the deltas of the output layer.
  */
-__kernel void elementWiseSubstractKernel(__global float4 *t,
-                                         __global float4 *y,
-                                         __global float4* delta,
-                                         int offset_t,
-                                         int offset_y,
-                                         int offset_delta)
+__kernel void elementWiseSubstractKernel(__global float4 *A,
+                                         __global float4 *B,
+                                         __global float4* R,
+                                         int offset_A,
+                                         int offset_B,
+                                         int offset_R)
 {
-    int i = get_global_id(0);
+    const int i = get_global_id(0);
     
-    float4 a = t[offset_t + i];
-    float4 b = y[offset_y + i];
+    const float4 a = A[offset_A + i];
+    const float4 b = B[offset_B + i];
     
-    delta[offset_delta + i] =  a - b;
+    R[offset_R + i] =  a - b;
 }
 
 /* Adds element by element. NDRange of one dimension. 
@@ -260,21 +263,21 @@ __kernel void elementWiseSubstractKernel(__global float4 *t,
  * The dimension should be the total number of elements divided by 4
  * This function is used to calculate the deltas of the output layer.
  */
-__kernel void elementWiseSumKernel(__global float4* t,
-                                   __global float4* y,
-                                   __global float4* delta,
-                                   int offset_t,
-                                   int offset_y,
-                                   int offset_delta,
-                                   float mult_t,
-                                   float mult_y)
+__kernel void elementWiseSumKernel(__global float4* A,
+                                   __global float4* B,
+                                   __global float4* R,
+                                   int offset_A,
+                                   int offset_B,
+                                   int offset_R,
+                                   float mult_A,
+                                   float mult_B)
 {
-    int i = get_global_id(0);
+    const int i = get_global_id(0);
     
-    float4 a = mult_t*t[offset_t + i];
-    float4 b = mult_y*y[offset_y + i];
+    const float4 a = mult_A*A[offset_A + i];
+    const float4 b = mult_B*B[offset_B + i];
     
-    delta[offset_delta + i] =  a + b;
+    R[offset_R + i] =  a + b;
 }
 
 
@@ -364,4 +367,24 @@ __kernel void softmaxKernelLocal(__global float4* z,
     float total = sum.x + sum.y + sum.z + sum.w;
     
     z[idx] = sdata[lid]/total;
+}
+
+/* 
+ *  1 dimensional NDRange = number of columns of floats / 4 
+ *  Sums the values of all the rows
+ */
+__kernel void rowSumKernel(__global float4 * matrixA,
+                           __global float4 *bias_inc,
+                           int nrRowsA)
+{
+    const int gid = get_global_id(0);
+    const int gsz = get_global_size(0);
+
+    float4 result = (float4) (0.0f);
+    for(int i = 0; i < nrRowsA; i++) {
+        const int idx = i*gsz + gid;
+        result += matrixA[idx];
+    }
+
+    bias_inc[gid] = result;
 }
