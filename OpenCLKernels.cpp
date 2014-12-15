@@ -18,6 +18,7 @@ OpenCLKernels::~OpenCLKernels() {
     delete softmaxKernelLocal;
     delete elementWiseMultiplicationBySigmoidDerivativeKernel;
     delete crossEntropyKernelLocal;
+    delete level2RegularizationKernelLocal;
     delete elementWiseSubstractKernel;
     delete elementWiseSumKernel;
     delete matrixMultiplicationSigmoidKernel;
@@ -67,6 +68,10 @@ void OpenCLKernels::opencl_init() {
       crossEntropyKernelLocal =
             new cl::Kernel(*program,
                            crossEntropyKernelLocal_name.c_str());
+      
+      level2RegularizationKernelLocal =
+            new cl::Kernel(*program,
+                           level2RegularizationKernelLocal_name.c_str());
       
       elementWiseMultiplicationBySigmoidDerivativeKernel =
             new cl::Kernel(*program,
@@ -164,12 +169,6 @@ void OpenCLKernels::opencl_init() {
     // Refer to the sample documentation for clarification about
     // how work is devided among work-groups and work-items.
     // -----------------------------------------------------------------------
-  
-//    std::cout << "Launching for device\n"
-//              << " (global size: " << global_size[0]
-//              << ", "  << global_size[1] << ")\n"
-//              << " (local size: " << local_size[0]
-//              << ", "  << local_size[1] << ")\n";
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0], global_size[1]);
@@ -179,8 +178,6 @@ void OpenCLKernels::opencl_init() {
                                global,
                                local);
     queue.finish();
-
-//    std::cout << "Matmult finished\n";
 }
 
 
@@ -196,13 +193,6 @@ void OpenCLKernels::runElementWiseSubstract(
     const size_t data_size_float4_global = ym.rows*ym.cols/4;
     
     size_t global_size[1] = {data_size_float4_global};
-    //size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
-    
-    //assert(global_size[0] % local_size[0] == 0);
-    
-//    std::cout << "Launching for device\n"
-//              << " (global size: " << global_size[0] << ")\n"
-//              << " ( local size: " << local_size[0] << ")\n";
 
     elementWiseSubstractKernel->setArg(0, *(tm.data.deviceData));
     elementWiseSubstractKernel->setArg(1, *(ym.data.deviceData));
@@ -238,10 +228,6 @@ void OpenCLKernels::runElementWiseSum(
     //size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
     //assert(global_size[0] % local_size[0] == 0);
-    
-//    std::cout << "Launching for device\n"
-//              << " (global size: " << global_size[0] << ")\n"
-//              << " ( local size: " << local_size[0] << ")\n";
 
     elementWiseSumKernel->setArg(0, *(a.data.deviceData));
     elementWiseSumKernel->setArg(1, *(b.data.deviceData));
@@ -277,10 +263,6 @@ void OpenCLKernels::runElementWiseMultiplicationBySigmoidDerivativeKernel(
     //size_t local_size[1] = {boost::math::gcd(blockSize, global_size[0])};
     
     //assert(global_size[0] % local_size[0] == 0);
-    
-//    std::cout << "Launching for device\n"
-//              << " (global size: " << global_size[0] << ")\n"
-//              << " ( local size: " << local_size[0] << ")\n";
 
     elementWiseMultiplicationBySigmoidDerivativeKernel->
         setArg(0, *(deltas.data.deviceData));
@@ -346,10 +328,6 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     // Refer to the sample documentation for clarification about
     // how work is devided among work-groups and work-items.
     // -----------------------------------------------------------------------
-  
-//    std::cout << "Launching for device\n"
-//            << " (global size: " << global_size[0] << ")\n"
-//            << " (local size: " << local_size[0] << ")\n";
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);
@@ -371,6 +349,67 @@ cl_float OpenCLKernels::runCrossEntropy(matrix_cl_float const &t,
     //return -ce/(y.rows*y.cols);
     return -ce/(y.rows);
 }
+
+cl_float OpenCLKernels::runL2Regularization(matrix_cl_float const &weights,
+                                            matrix_cl_float &error) {
+    // proposed blockSize
+    const size_t blockSize = 512;  // float4's (8kBytes)
+    
+    const size_t data_size_float4_global = weights.rows*weights.cols/4;
+
+    size_t global_size[1] = {data_size_float4_global / 2};
+    // global_size es múltiplo de 8. 
+    // Aprovechamos éste hecho para fijar local_size
+    size_t local_size[1] = {8};
+    
+    if(global_size[0] <= blockSize) {
+        local_size[0] = global_size[0];
+    } else {
+        size_t resto = global_size[0] / 8;  // sabemos que es divisible
+        if(resto <= blockSize) {
+            local_size[0] = resto;
+        } 
+    }
+    
+    assert(data_size_float4_global * 4 <= error.data.hostData.size());    
+    //assert(global_size[0] % local_size[0] == 0);
+    
+    // -----------------------------------------------------------------------
+    // Setting kernel arguments
+    // -----------------------------------------------------------------------
+    level2RegularizationKernelLocal->setArg(0, *(weights.data.deviceData));
+    level2RegularizationKernelLocal->setArg(1, *(error.data.deviceData));
+    level2RegularizationKernelLocal->setArg(2,
+                            cl::Local(local_size[0] * 4 * sizeof(cl_float)));
+
+    // -----------------------------------------------------------------------
+    // Define ndrange iteration space: global and local sizes based on
+    // parameters obtained from user
+
+    // Refer to the sample documentation for clarification about
+    // how work is devided among work-groups and work-items.
+    // -----------------------------------------------------------------------
+    
+    const cl::NDRange offset = cl::NullRange;
+    const cl::NDRange global(global_size[0]);
+    const cl::NDRange local(local_size[0]);
+    queue.enqueueNDRangeKernel(*level2RegularizationKernelLocal, offset, global, local);
+    queue.finish();
+
+    //std::cout << "CE kernel finished\n";
+    
+    error.data.readFromDevice(queue);
+
+    const size_t error_size = 4 * global_size[0]/local_size[0];
+    std::vector<cl_float> & e = error.data.hostData;
+    cl_float sumsqr = 0.0;
+    for (size_t i = 0; i < error_size; i++) {
+        sumsqr += e[i];
+    }
+    
+    return sumsqr;
+}
+
 
 void OpenCLKernels::runSoftMax(
             matrix_cl_float const &activations) {

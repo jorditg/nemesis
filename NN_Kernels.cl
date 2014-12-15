@@ -335,6 +335,43 @@ __kernel void crossEntropyKernelLocal(__global float4* t,
     if(tid == 0) output[bid] = sdata[0];	
 }
 
+__kernel void level2RegularizationKernelLocal(__global float4* W, 
+                                              __global float4* O, 
+                                              __local float4* sdata)
+{
+    // load shared mem
+    unsigned int tid = get_local_id(0);
+    unsigned int bid = get_group_id(0);
+    unsigned int gid = get_global_id(0);
+
+    unsigned int localSize = get_local_size(0);
+    unsigned int stride = gid * 2;
+    
+    float4 w1 = W[stride];
+    float4 i1 = w1*w1;
+    
+    float4 w2 = W[stride + 1];
+    float4 i2 = w2*w2;
+    
+    sdata[tid] = i1 + i2;
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+    
+    // do reduction in shared mem
+    for(unsigned int s = localSize >> 1; s > 0; s >>= 1) 
+    {
+        if(tid < s) 
+        {
+            sdata[tid] += sdata[tid + s];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    // write result for this block to global mem
+    if(tid == 0) O[bid] = sdata[0];	
+}
+
+
 // Al finalizar la función se obtiene un vector de output de tamaño igual al número de grupos
 // que hay que sumar, obteniendo el resultado final
 

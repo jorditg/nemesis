@@ -419,9 +419,7 @@ void nn::BP() {
                             -learningRateOverMinibatchSize);
         
         openclKernels->runRowSum(del, bias_inc);
-        
-        openclKernels->runElementWiseSum(wei, wei_inc, wei);
-        
+                
         //act.data.readFromDevice(*queue);
         //del.data.readFromDevice(*queue);
         //wei.data.readFromDevice(*queue);
@@ -430,14 +428,21 @@ void nn::BP() {
         //print(wei, "Wei = Wei + 1.0*ActT*delta");
     }
     // lo sacamos fuera del loop para hacerlo correr una sola vez
-    bias_val.set(1, bias.hostData.size(), 0);
-    bias_inc.set(1, bias.hostData.size(), 0);
+    const size_t bi_sz = bias.hostData.size();
+    bias_val.set(1, bi_sz, 0);
+    bias_inc.set(1, bi_sz, 0);
     openclKernels->runElementWiseSum(bias_val, 
                                      bias_inc, 
                                      bias_val, 
                                      momentum, 
                                      -learningRateOverMinibatchSize);
-
+   
+    const size_t wei_sz = wei.data.hostData.size();
+    wei.set(1, wei_sz, 0);
+    wei_inc.set(1, wei_sz, 0);
+    if(lambda > 1e-10)  // if L2-regularization
+        openclKernels->runElementWiseSum(wei_inc, wei, wei_inc, 1.0f, - learningRate*lambda/numberOfTrainingData);
+    openclKernels->runElementWiseSum(wei, wei_inc, wei);
 }
 
 void nn::NAG_preupdate()
@@ -528,11 +533,25 @@ void nn::train() {
         
         FF();
         cl_float ce = cross_entropy();
+        cl_float sqr_weights = 0.0f;
+        if(lambda > 1e-10) {
+            sqr_weights = L2_regularization();
+        }
         if (epoch % printEpochs == 0) {
             std::cout << "Epoch: " << epoch << "   CE: " << ce;
+            if(lambda > 1e-10) {
+                const cl_float L2reg = 0.5*sqr_weights*lambda/numberOfTrainingData;
+                std::cout << " L2Reg: " << L2reg << " Total CE: " << ce + L2reg;
+            }
+            std::cout << std::endl;
             FF_test();
-            cl_float ce = cross_entropy_test();
-            std::cout << "   Test CE: " << ce << std::endl;
+            ce = cross_entropy_test();
+            std::cout << "   Test CE: " << ce;
+            if(lambda > 1e-10) {
+                const cl_float L2reg = 0.5*sqr_weights*lambda/numberOfTestData;
+                std::cout << " L2Reg: " << L2reg << " Total CE: " << ce + L2reg;
+            }
+            std::cout << std::endl;
             print_classification_results_train();
             print_classification_results_test();
         }
@@ -580,6 +599,16 @@ cl_float nn::cross_entropy_test() {
     act.set(numberOfTestData, elemLastLayer, activations_test_offsets[numberOfLayers-1]);
 
     return openclKernels->runCrossEntropy(tm, act, ce);
+}
+
+
+cl_float nn::L2_regularization() {
+    matrix_cl_float w(weights);
+    matrix_cl_float ce(cross_entropy_error);
+    
+    w.set(1, weights.hostData.size(), 0);
+    
+    return openclKernels->runL2Regularization(w, ce);
 }
 
 
