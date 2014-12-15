@@ -385,6 +385,10 @@ void nn::BP() {
         //print(del_r, "delta_r*Wt.*s*(1-s)");
     }
     
+    if(NAG) {
+        NAG_postupdate();
+    }
+    
     // Weight actualization
     for (cl_int i = numberOfLayers - 2; i >= 0; i--) {
         // act transposed
@@ -411,8 +415,9 @@ void nn::BP() {
                             nullptr,
                             false,
                             sum,
-                            momentum,
+                            momentum,  
                             -learningRateOverMinibatchSize);
+        
         openclKernels->runRowSum(del, bias_inc);
         
         openclKernels->runElementWiseSum(wei, wei_inc, wei);
@@ -439,24 +444,61 @@ void nn::NAG_preupdate()
 {
     matrix_cl_float wei(weights);
     matrix_cl_float wei_inc(increment_weights);
-
-    // Weight actualization
-    for (cl_int i = numberOfLayers - 2; i >= 0; i--) {
-        // act transposed
-        wei.set(elementsPerLayer[i], elementsPerLayer[i+1],
-                weights_offsets[i]);
-        wei_inc.set(elementsPerLayer[i], elementsPerLayer[i+1],
-                    weights_offsets[i]);
-        
-       
-        openclKernels->runElementWiseSum(
+    const size_t wei_size = weights.hostData.size();
+    wei.set(1, wei_size, 0);
+    wei_inc.set(1, wei_size, 0);
+     
+    openclKernels->runElementWiseSum(
                             wei,
                             wei_inc,
                             wei,
                             1.0f,
-                            momentum);        
-    }
+                            momentum);
+    
+    matrix_cl_float bia(bias);
+    matrix_cl_float bia_inc(increment_bias);
+    const size_t bia_size = bias.hostData.size();
+    bia.set(1, bia_size, 0);
+    bia_inc.set(1, bia_size, 0);
+    
+    openclKernels->runElementWiseSum(
+                            bia,
+                            bia_inc,
+                            bia,
+                            1.0f,
+                            momentum);
+    
 }
+
+void nn::NAG_postupdate()
+{
+    matrix_cl_float wei(weights);
+    matrix_cl_float wei_inc(increment_weights);
+    const size_t wei_size = weights.hostData.size();
+    wei.set(1, wei_size, 0);
+    wei_inc.set(1, wei_size, 0);
+     
+    openclKernels->runElementWiseSum(
+                            wei,
+                            wei_inc,
+                            wei,
+                            1.0f,
+                            -momentum);
+    
+    matrix_cl_float bia(bias);
+    matrix_cl_float bia_inc(increment_bias);
+    const size_t bia_size = bias.hostData.size();
+    bia.set(1, bia_size, 0);
+    bia_inc.set(1, bia_size, 0);
+    
+    openclKernels->runElementWiseSum(
+                            bia,
+                            bia_inc,
+                            bia,
+                            1.0f,
+                            -momentum); 
+}
+
 
 
 void nn::train() {
