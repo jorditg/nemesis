@@ -412,7 +412,9 @@ __kernel void softmaxKernelLocal(__global float4* z,
  */
 __kernel void rowSumKernel(__global float4 * matrixA,
                            __global float4 *bias_inc,
-                           int nrRowsA)
+                           int nrRowsA,
+                           float multExisting,
+                           float multNew)
 {
     const int gid = get_global_id(0);
     const int gsz = get_global_size(0);
@@ -423,5 +425,8 @@ __kernel void rowSumKernel(__global float4 * matrixA,
         result += matrixA[idx];
     }
 
-    bias_inc[gid] = result;
+    const float4 a = multExisting*bias_inc[gid];
+    const float4 b = multNew*result;
+    
+    bias_inc[gid] = a + b;
 }

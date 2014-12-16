@@ -74,7 +74,9 @@ class OpenCLKernels {
     
     void runRowSum(
             matrix_cl_float &A, 
-            matrix_cl_float &result);
+            matrix_cl_float &result,
+            cl_float multExisting = 0.0f,
+            cl_float multNew = 1.0f);
   private:
     const std::string sourceFile = "NN_Kernels.cl";
     

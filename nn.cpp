@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <string>
 #include <iostream>
+#include <iomanip>
 #include <future>
 
 #include "nn.hpp"
@@ -144,14 +145,15 @@ nn::~nn() {
 /**
 
  * Sparse random initialization (Martens, 2010)
-
+ * Stddev bibliography values: 0.1, 0.001
  */
 
-void nn::populate_sparse_weights() {
+void nn::populate_sparse_weights(cl_float stddev) {
+    
   // suppose all the elements are 0 initialized only
   // sets the differents from 0
   boost::mt19937 rng;
-  boost::normal_distribution<> nd(0.0f, 1.0f);
+  boost::normal_distribution<> nd(0.0f, stddev);
   boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > var_nor(rng, nd);
 
   const cl_uint init_elements = 15;
@@ -244,7 +246,7 @@ void nn::FF_test() {
 }
 
 
-void nn::print_classification_results_test() {
+cl_float nn::percentage_classification_results_test() {
     t_test.readFromDevice(*queue);
     activations_test.readFromDevice(*queue);
     const cl_uint N = elementsPerLayer[elementsPerLayer.size()-1];
@@ -278,12 +280,10 @@ void nn::print_classification_results_test() {
         }
     }
     
-    std::cout << "Test: ";
-    std::cout << "well clasified: " << good << " of " << good + bad;
-    std::cout << " " << float(good)/float(good+bad)*100 << "% of well classified" << std::endl;
+    return cl_float(good)/cl_float(good+bad)*100;
 }
 
-void nn::print_classification_results_train() {
+cl_float nn::percentage_classification_results_train() {
     t.readFromDevice(*queue);
     activations.readFromDevice(*queue);
     const cl_uint N = elementsPerLayer[elementsPerLayer.size()-1];
@@ -317,15 +317,11 @@ void nn::print_classification_results_train() {
         }
     }
     
-    std::cout << "Train: ";
-    std::cout << "well clasified: " << good << " of " << good + bad;
-    std::cout << " " << float(good)/float(good+bad)*100 << "% of well classified" << std::endl;
+    return cl_float(good)/cl_float(good+bad)*100;
 }
 
 
 void nn::BP() {
-    const cl_float learningRateOverMinibatchSize =
-        learningRate/cl_float(minibatchSize);
     
     matrix_cl_float tm(t);
     matrix_cl_float act(activations);
@@ -407,7 +403,8 @@ void nn::BP() {
         //print(wei, "Wei");
 
         const bool sum = true;
-        
+        const cl_float learningRateOverMinibatchSize =
+                            learningRate/cl_float(minibatchSize);
         openclKernels->runMatrixMultiplicationSigmoid(
                             act,
                             del,
@@ -418,7 +415,7 @@ void nn::BP() {
                             momentum,  
                             -learningRateOverMinibatchSize);
         
-        openclKernels->runRowSum(del, bias_inc);
+        openclKernels->runRowSum(del, bias_inc, momentum, -learningRateOverMinibatchSize);
                 
         //act.data.readFromDevice(*queue);
         //del.data.readFromDevice(*queue);
@@ -433,9 +430,7 @@ void nn::BP() {
     bias_inc.set(1, bi_sz, 0);
     openclKernels->runElementWiseSum(bias_val, 
                                      bias_inc, 
-                                     bias_val, 
-                                     momentum, 
-                                     -learningRateOverMinibatchSize);
+                                     bias_val);
    
     const size_t wei_sz = wei.data.hostData.size();
     wei.set(1, wei_sz, 0);
@@ -504,6 +499,28 @@ void nn::NAG_postupdate()
                             -momentum); 
 }
 
+void nn::print_results_data_header() {
+    std::cout << "\tTRAIN\t\t\t\t\t\t\t\tTEST" << std::endl;
+    std::cout << "Epoch\tCE1\t\tCE2\t\tCE\t\t\%Train\t\tCE1\t\tCE2\t\tCE\t\t\%Test" << std::endl;
+}
+
+void nn::print_results_data(cl_float ce1, 
+                            cl_float ce2, 
+                            cl_float ce, 
+                            cl_float ce1_test, 
+                            cl_float ce2_test, 
+                            cl_float ce_test) { 
+    std::cout << std::fixed << std::setprecision(6)
+              << epoch << "\t" 
+              << ce1 << "\t" 
+              << ce2 << "\t" 
+              << ce << "\t" 
+              << percentage_classification_results_train() << "%\t"
+              << ce1_test << "\t"
+              << ce2_test << "\t"
+              << ce_test << "\t"
+              << percentage_classification_results_test() << "%\n";   
+}
 
 
 void nn::train() {
@@ -520,7 +537,8 @@ void nn::train() {
     
     auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
     
-    for (size_t epoch = 0; epoch < maxEpochs; epoch++) {
+    print_results_data_header();
+    for (epoch = 0; epoch < maxEpochs; epoch++) {
         // wait for minibatch thread to finish
         fut.get();
         // load to device the thread calculated minibatch
@@ -532,42 +550,29 @@ void nn::train() {
         }
         
         FF();
-        cl_float ce = cross_entropy();
-        cl_float sqr_weights = 0.0f;
-        if(lambda > 1e-10) {
-            sqr_weights = L2_regularization();
-        }
         if (epoch % printEpochs == 0) {
-            std::cout << "Epoch: " << epoch << "   CE: " << ce;
-            if(lambda > 1e-10) {
-                const cl_float L2reg = 0.5*sqr_weights*lambda/numberOfTrainingData;
-                std::cout << " L2Reg: " << L2reg << " Total CE: " << ce + L2reg;
-            }
-            std::cout << std::endl;
+            const cl_float sqr_weights = L2_regularization();
+            const cl_float ce1 = cross_entropy();
+            const cl_float ce2 = 0.5*sqr_weights*lambda/cl_float(numberOfTrainingData);
+            ce = ce1 + ce2;    
             FF_test();
-            ce = cross_entropy_test();
-            std::cout << "   Test CE: " << ce;
-            if(lambda > 1e-10) {
-                const cl_float L2reg = 0.5*sqr_weights*lambda/numberOfTestData;
-                std::cout << " L2Reg: " << L2reg << " Total CE: " << ce + L2reg;
-            }
-            std::cout << std::endl;
-            print_classification_results_train();
-            print_classification_results_test();
+            const cl_float ce1_test = cross_entropy_test();
+            const cl_float ce2_test = 0.5*sqr_weights*lambda/cl_float(numberOfTestData);
+            ce_test = ce1_test + ce2_test;
+
+            print_results_data(ce1, ce2, ce, ce1_test, ce2_test, ce_test);
+            if (ce < minError) break;
         }
-        if (ce < minError) {
-            std::cout << "Epoch: " << epoch << "   CE: " << ce;
-            FF_test();
-            cl_float ce = cross_entropy_test();
-            std::cout << "   Test CE: " << ce << std::endl;
-            print_classification_results_train();
-            print_classification_results_test();
-            break;
-        }
+            
         BP();
         
         update_momentum_rule_Hinton2013(epoch);
     }
+    
+    weights.readFromDevice(*queue);
+    bias.readFromDevice(*queue);
+    save_float_vector("output_weights.txt", weights_host);
+    save_float_vector("output_bias.txt", bias_host);
 }
 
 cl_float nn::cross_entropy() {

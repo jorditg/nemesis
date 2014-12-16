@@ -26,14 +26,18 @@ class nn {
     bool NAG = true;    // true uses Nesterov-accelerated gradient. 
                         // false uses Classical Momentum
     
+    cl_uint epoch = 0;  // epoch of training
+    cl_float ce = 0.0;  
+    cl_float ce_test = 0.0;
+    
     cl_uint minibatchSize = 256;
     cl_float learningRate = 0.3f;  // Typìcal value 0.3
     cl_float momentum = 0.9f;      // Typical value 0.9
-    size_t maxEpochs = 100000;      // Typical value 5000000
+    size_t maxEpochs = 10000;      // Typical value 5000000
     cl_float minError = 0.001f;     // Typical value 0.01
     cl_float lambda = 1.0f;     // L2 regularization parameter
     
-    size_t printEpochs = 100;      // Typical value 1000
+    size_t printEpochs = 250;      // Typical value 1000
     
     std::vector<cl_uint> elementsPerLayer;
     
@@ -103,15 +107,28 @@ class nn {
         const cl_float new_momentum = 1.0f - std::pow( 2.0f, -1.0f - std::log2(t / 250.0f + 1.0f));
         momentum = std::min(momentum_max, new_momentum);                            
     }
+
+    void print_results_data_header();
+    void print_results_data(cl_float ce1, 
+                            cl_float ce2, 
+                            cl_float ce, 
+                            cl_float ce1_test, 
+                            cl_float ce2_test, 
+                            cl_float ce_test);  
     
- public:
+    cl_float percentage_classification_results_test();
+    cl_float percentage_classification_results_train();
+    
+    void NAG_preupdate();
+    void NAG_postupdate(); 
+public:
     
     explicit nn(const std::string &nn_file,
                 const std::string &train_file,
                 const std::string &test_file);
     ~nn();
 
-    void populate_sparse_weights();
+    void populate_sparse_weights(cl_float stddev = 0.1f);
     void populate_random_weights(const cl_float min, const cl_float max);
     void populate_fixed_weights(const cl_float val);
     
@@ -121,27 +138,21 @@ class nn {
                                     const cl_uint nr_cols_B);
 
     
-    inline void load_weights(std::string filename) {
-        load_csv_vector(filename, weights_host);
+    inline void load_float_vector(std::string filename, std::vector<cl_float> & v) {
+        load_csv_vector(filename, v);
     }
 
-    inline void save_weights(std::string filename) {
-        weights.readFromDevice(*queue);
-        save_csv_vector(filename, weights_host);
+    inline void save_float_vector(std::string filename, std::vector<cl_float> & v) {
+        save_csv_vector(filename, v);
     }
     
     void FF();  // Feed forward (all sigmoid) calculation of training data
     void FF_test(); // Feed forward (all sigmoid) calculation of test data
-    void print_classification_results_test();
-    void print_classification_results_train();
+
     
     cl_float cross_entropy();   // CE training calculation   
-    cl_float cross_entropy_test();  // CE test calculation
-    
+    cl_float cross_entropy_test();  // CE test calculation    
     cl_float L2_regularization();
-
-    void NAG_preupdate();
-    void NAG_postupdate();
     
     void BP();  // Backpropagation calculation (all sigmoid))
     

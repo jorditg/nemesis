@@ -436,13 +436,17 @@ void OpenCLKernels::runSoftMax(
 
 void OpenCLKernels::runRowSum(
             matrix_cl_float &A, 
-            matrix_cl_float &result) {
+            matrix_cl_float &result,
+            cl_float multExisting,
+            cl_float multNew) {
     
     size_t global_size[1] = {A.cols/4};
     
     rowSumKernel->setArg(0, *(A.data.deviceData));
     rowSumKernel->setArg(1, *(result.data.deviceData));
     rowSumKernel->setArg(2, A.rows);
+    rowSumKernel->setArg(3, multExisting);
+    rowSumKernel->setArg(4, multNew);
     
     const cl::NDRange offset = cl::NullRange;
     const cl::NDRange global(global_size[0]);

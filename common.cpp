@@ -60,7 +60,6 @@ void load_csv_data(const std::string & filename,
     
     cl_uint n = 0;
     while (getline(in, line)) {
-        line = "1," + line;     // Insert the bias element not present in file
         Tokenizer tok(line);
         vec.assign(tok.begin(), tok.end());
         // vector now contains strings from one row, output to cout here
