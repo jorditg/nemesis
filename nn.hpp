@@ -125,7 +125,10 @@ public:
     
     explicit nn(const std::string &nn_file,
                 const std::string &train_file,
-                const std::string &test_file);
+                const std::string &train_labels_file,
+                const std::string &test_file,
+                const std::string &test_labels_file
+               );
     ~nn();
 
     void populate_sparse_weights(cl_float stddev = 0.1f);

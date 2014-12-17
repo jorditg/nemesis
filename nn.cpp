@@ -15,21 +15,25 @@
 
 #include "nn.hpp"
 #include "OpenCLKernels.hpp"
-#include "common.hpp"
+// #include "common.hpp"
+#include "mnist.hpp"
 
-nn::nn(const std::string &nn_file,
-       const std::string &train_file,
-       const std::string &test_file)
-              : activations(activations_host),
-                activations_test(activations_test_host),
-                bias(bias_host),
-                weights(weights_host),
-                increment_weights(increment_weights_host),
-                increment_bias(increment_bias_host),
-                deltas(deltas_host),
-                t(t_host),
-                t_test(t_test_host),
-                cross_entropy_error(cross_entropy_error_host) {
+nn::nn(
+        const std::string &nn_file,
+        const std::string &train_file,
+        const std::string &train_labels_file,
+        const std::string &test_file,
+        const std::string &test_labels_file
+      ) : activations(activations_host),
+          activations_test(activations_test_host),
+          bias(bias_host),
+          weights(weights_host),
+          increment_weights(increment_weights_host),
+          increment_bias(increment_bias_host),
+          deltas(deltas_host),
+          t(t_host),
+          t_test(t_test_host),
+          cross_entropy_error(cross_entropy_error_host) {
     
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);  // get available OpenCL platforms
@@ -45,20 +49,45 @@ nn::nn(const std::string &nn_file,
 
     // load nn structure
     load_nn_data(nn_file, numberOfLayers, elementsPerLayer);
+ 
     // load input data into host memory
-    load_csv_data(train_file,
-                  training_data,
-                  training_data_output,
-                  numberOfTrainingData,
-                  elementsPerLayer[0],
-                  elementsPerLayer[numberOfLayers-1]);
+    size_t r,c; // local variables not used
+    
+    read_mnist_images_file(train_file, 
+                           training_data, 
+                           r, 
+                           c);
+    numberOfTrainingData = static_cast<cl_uint>(r);
+    
+    read_mnist_labels_file(train_labels_file, 
+                           training_data_output, 
+                           r, 
+                           c);
+    
+//    load_csv_data(train_file,
+//                  training_data,
+//                  training_data_output,
+//                  numberOfTrainingData,
+//                  elementsPerLayer[0],
+//                  elementsPerLayer[numberOfLayers-1]);
 
-    load_csv_data(test_file,
-                  activations_test.hostData,
-                  t_test.hostData,
-                  numberOfTestData,
-                  elementsPerLayer[0],
-                  elementsPerLayer[numberOfLayers-1]);
+    read_mnist_images_file(test_file, 
+                           activations_test.hostData, 
+                           r, 
+                           c);
+    numberOfTestData = static_cast<cl_uint>(r);
+    
+    read_mnist_labels_file(test_labels_file, 
+                           training_data_output, 
+                           r, 
+                           c);    
+    
+//    load_csv_data(test_file,
+//                  activations_test.hostData,
+//                  t_test.hostData,
+//                  numberOfTestData,
+//                  elementsPerLayer[0],
+//                  elementsPerLayer[numberOfLayers-1]);
     
     // host memory allocation for neural network
     numberOfWeights = 0;
