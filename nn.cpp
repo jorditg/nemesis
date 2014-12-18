@@ -78,7 +78,7 @@ nn::nn(
     numberOfTestData = static_cast<cl_uint>(r);
     
     read_mnist_labels_file(test_labels_file, 
-                           training_data_output, 
+                           t_test.hostData, 
                            r, 
                            c);    
     
