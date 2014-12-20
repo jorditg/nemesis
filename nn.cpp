@@ -29,7 +29,7 @@ nn::nn(
           bias(bias_host),
           weights(weights_host),
           increment_weights(increment_weights_host),
-          increment_bias(increment_bias_host),
+          // increment_bias(increment_bias_host),
           deltas(deltas_host),
           t(t_host),
           t_test(t_test_host),
@@ -72,15 +72,19 @@ nn::nn(
 //                  elementsPerLayer[numberOfLayers-1]);
 
     read_mnist_images_file(test_file, 
-                           activations_test.hostData, 
+                           activations_test.hostData,
                            r, 
                            c);
     numberOfTestData = static_cast<cl_uint>(r);
     
     read_mnist_labels_file(test_labels_file, 
-                           t_test.hostData, 
+                           t_test.hostData,
                            r, 
                            c);    
+//    for(int i=0;i<30;i++) {
+//        print_mnist_image_txt(activations_test.hostData, i*28*28);
+//        print_mnist_label_txt(t_test.hostData, i*16);
+//    }
     
 //    load_csv_data(test_file,
 //                  activations_test.hostData,
@@ -104,7 +108,7 @@ nn::nn(
     bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
     weights.hostData.resize(numberOfWeights);
     increment_weights.hostData.resize(numberOfWeights);
-    increment_bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
+    // increment_bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
     // there are no deltas in input layer
     deltas.hostData.resize((numberOfNeurons
                             -elementsPerLayer[0])*minibatchSize);
@@ -133,10 +137,6 @@ nn::nn(
       deltas_offsets[i] = activations_offsets[i] - activations_offsets[1];
     }
     
-    //load_csv_vector("weights.txt", weights.hostData);
-    //populate_random_weights(0.00001, 0.00009);
-
-
     // device memory allocation
     // Create OpenCL buffers for the matrices based on allocated memory regions
     // Create buffers with CL_MEM_USE_HOST_PTR to minimize copying and
@@ -147,7 +147,7 @@ nn::nn(
     bias.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     increment_weights.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
-    increment_bias.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
+    // increment_bias.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     deltas.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     t_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
@@ -156,8 +156,9 @@ nn::nn(
 
     activations.writeToDevice(*queue);
     activations_test.writeToDevice(*queue);
-    weights.writeToDevice(*queue);
     bias.writeToDevice(*queue);
+    weights.writeToDevice(*queue);
+    increment_weights.writeToDevice(*queue);
     t.writeToDevice(*queue);
     t_test.writeToDevice(*queue);
         
@@ -170,6 +171,26 @@ nn::~nn() {
     delete queue;
     delete context;
 }
+
+/**
+
+ * Sparse random initialization (Martens, 2010)
+ * Stddev bibliography values: 0.1, 0.001
+ */
+
+void nn::populate_normal_random_weights(cl_float stddev) {
+    
+  // suppose all the elements are 0 initialized only
+  // sets the differents from 0
+  boost::mt19937 rng;
+  boost::normal_distribution<> nd(0.0f, stddev);
+  boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > var_nor(rng, nd);
+
+  for (std::vector<cl_float>::iterator it = weights.hostData.begin();
+       it != weights.hostData.end(); ++it)
+    *it = var_nor();
+}
+
 
 /**
 
@@ -276,9 +297,9 @@ void nn::FF_test() {
 
 
 cl_float nn::percentage_classification_results_test() {
-    t_test.readFromDevice(*queue);
-    activations_test.readFromDevice(*queue);
-    const cl_uint N = elementsPerLayer[elementsPerLayer.size()-1];
+    // t_test.readFromDevice(*queue); // (doesn't change)
+    activations_test.readFromDevice(*queue);    // SE PUEDE ACOTAR PARA NO TANTAS TRANSFERENCIAS SOLO BAJAR OUTPUTS
+    const cl_uint N = elementsPerLayer[numberOfLayers-1];
     const cl_uint off = activations_test_offsets[numberOfLayers-1];
     std::vector<cl_float> &v = t_test.hostData;
     std::vector<cl_float> &w = activations_test.hostData;
@@ -289,17 +310,19 @@ cl_float nn::percentage_classification_results_test() {
         cl_float max1 = 0.0f;
         cl_uint pos1 = 0;
         for(cl_uint j = 0; j < N; j++) {
-            if(v[i*N+j] > max1) {
+            const cl_float val = v[i*N+j];
+            if(val > max1) {
                 pos1 = j;
-                max1 = v[i*N+j];
+                max1 = val;
             }
         }
         cl_float max2 = 0.0f;
         cl_uint pos2 = 0;
         for(cl_uint j = 0; j < N; j++) {
-            if(w[off+i*N+j] > max2) {
+            const cl_float val = w[off+i*N+j];
+            if(val > max2) {
                 pos2 = j;
-                max2 = w[off+i*N+j];
+                max2 = val;
             }
         }
         if(pos1 == pos2) {
@@ -326,17 +349,19 @@ cl_float nn::percentage_classification_results_train() {
         cl_float max1 = 0.0f;
         cl_uint pos1 = 0;
         for(cl_uint j = 0; j < N; j++) {
-            if(v[i*N + j] > max1) {
+            const cl_float val = v[i*N + j];
+            if(val > max1) {
                 pos1 = j;
-                max1 = v[i*N + j];
+                max1 = val;
             }
         }
         cl_float max2 = 0.0f;
         cl_uint pos2 = 0;
         for(cl_uint j = 0; j < N; j++) {
-            if(w[off+i*N+j] > max2) {
+            const cl_float val = w[off+i*N+j];
+            if(val > max2) {
                 pos2 = j;
-                max2 = w[off+i*N+j];
+                max2 = val;
             }
         }
         if(pos1 == pos2) {
@@ -355,9 +380,7 @@ void nn::BP() {
     matrix_cl_float tm(t);
     matrix_cl_float act(activations);
     matrix_cl_float wei(weights);
-    matrix_cl_float bias_val(bias);
-    matrix_cl_float wei_inc(increment_weights);
-    matrix_cl_float bias_inc(increment_bias);
+    // matrix_cl_float bias_inc(increment_bias);
     matrix_cl_float del(deltas);
     matrix_cl_float del_r(deltas);
 
@@ -391,28 +414,22 @@ void nn::BP() {
                 true);
         openclKernels->
             runMatrixMultiplicationSigmoid(del, wei, del_r);
-
-        //wei.data.readFromDevice(*queue);
-        //del.data.readFromDevice(*queue);
-        //del_r.data.readFromDevice(*queue);
-        //print(wei, "W", true);
-        //print(del, "delta");
-        //print(del_r, "delta*Wt");
         
         act.set(minibatchSize,
                 elementsPerLayer[i],
                 activations_offsets[i]);
         openclKernels->
             runElementWiseMultiplicationBySigmoidDerivativeKernel(del_r, act);
+    }   
+}
 
-        //print(act, "act");
-        //del_r.data.readFromDevice(*queue);
-        //print(del_r, "delta_r*Wt.*s*(1-s)");
-    }
-    
-    if(NAG) {
-        NAG_postupdate();
-    }
+void nn::WA() {
+    matrix_cl_float act(activations);
+    matrix_cl_float wei(weights);
+    matrix_cl_float bias_val(bias);
+    matrix_cl_float wei_inc(increment_weights);
+    // matrix_cl_float bias_inc(increment_bias);
+    matrix_cl_float del(deltas);
     
     // Weight actualization
     for (cl_int i = numberOfLayers - 2; i >= 0; i--) {
@@ -425,11 +442,7 @@ void nn::BP() {
                 weights_offsets[i]);
         wei_inc.set(elementsPerLayer[i], elementsPerLayer[i+1],
                     weights_offsets[i]);
-        bias_inc.set(1, elementsPerLayer[i+1], bias_offsets[i]);
-        
-
-        //wei.data.readFromDevice(*queue);
-        //print(wei, "Wei");
+        bias_val.set(1, elementsPerLayer[i+1], bias_offsets[i]);
 
         const bool sum = true;
         const cl_float learningRateOverMinibatchSize =
@@ -444,30 +457,18 @@ void nn::BP() {
                             momentum,  
                             -learningRateOverMinibatchSize);
         
-        openclKernels->runRowSum(del, bias_inc, momentum, -learningRateOverMinibatchSize);
+        openclKernels->runRowSum(del, bias_val, 1.0f, -learningRateOverMinibatchSize);
                 
-        //act.data.readFromDevice(*queue);
-        //del.data.readFromDevice(*queue);
-        //wei.data.readFromDevice(*queue);
-        //print(act, "Act", true);
-        //print(del, "delta");
-        //print(wei, "Wei = Wei + 1.0*ActT*delta");
     }
-    // lo sacamos fuera del loop para hacerlo correr una sola vez
-    const size_t bi_sz = bias.hostData.size();
-    bias_val.set(1, bi_sz, 0);
-    bias_inc.set(1, bi_sz, 0);
-    openclKernels->runElementWiseSum(bias_val, 
-                                     bias_inc, 
-                                     bias_val);
-   
+
     const size_t wei_sz = wei.data.hostData.size();
     wei.set(1, wei_sz, 0);
     wei_inc.set(1, wei_sz, 0);
     if(lambda > 1e-10)  // if L2-regularization
         openclKernels->runElementWiseSum(wei_inc, wei, wei_inc, 1.0f, - learningRate*lambda/numberOfTrainingData);
-    openclKernels->runElementWiseSum(wei, wei_inc, wei);
+    openclKernels->runElementWiseSum(wei, wei_inc, wei);    
 }
+
 
 void nn::NAG_preupdate()
 {
@@ -481,19 +482,6 @@ void nn::NAG_preupdate()
                             wei,
                             wei_inc,
                             wei,
-                            1.0f,
-                            momentum);
-    
-    matrix_cl_float bia(bias);
-    matrix_cl_float bia_inc(increment_bias);
-    const size_t bia_size = bias.hostData.size();
-    bia.set(1, bia_size, 0);
-    bia_inc.set(1, bia_size, 0);
-    
-    openclKernels->runElementWiseSum(
-                            bia,
-                            bia_inc,
-                            bia,
                             1.0f,
                             momentum);
     
@@ -513,19 +501,6 @@ void nn::NAG_postupdate()
                             wei,
                             1.0f,
                             -momentum);
-    
-    matrix_cl_float bia(bias);
-    matrix_cl_float bia_inc(increment_bias);
-    const size_t bia_size = bias.hostData.size();
-    bia.set(1, bia_size, 0);
-    bia_inc.set(1, bia_size, 0);
-    
-    openclKernels->runElementWiseSum(
-                            bia,
-                            bia_inc,
-                            bia,
-                            1.0f,
-                            -momentum); 
 }
 
 void nn::print_results_data_header() {
@@ -563,6 +538,7 @@ void nn::train() {
                            elementsPerLayer[numberOfLayers-1]
                            );
     const size_t minibatch_size_bytes = minibatchSize*elementsPerLayer[0]*sizeof(cl_float);
+    const size_t minibatch_size_output_bytes = minibatchSize*elementsPerLayer[numberOfLayers-1]*sizeof(cl_float);
     
     auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
     
@@ -572,12 +548,12 @@ void nn::train() {
         fut.get();
         // load to device the thread calculated minibatch
         activations.writeToDevice(*queue, minibatch_size_bytes);
+        t.writeToDevice(*queue, minibatch_size_output_bytes);
         // launch next minibatch calculation
         fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
         if(NAG) {
             NAG_preupdate();
-        }
-        
+        }      
         FF();
         if (epoch % printEpochs == 0) {
             const cl_float sqr_weights = L2_regularization();
@@ -594,8 +570,14 @@ void nn::train() {
         }
             
         BP();
+        if(NAG) {
+            NAG_postupdate();
+        }
+        WA();
         
-        update_momentum_rule_Hinton2013(epoch);
+        if(enableMomentumRule) {
+            update_momentum_rule_Hinton2013(epoch);
+        }
     }
     
     weights.readFromDevice(*queue);

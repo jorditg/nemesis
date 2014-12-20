@@ -79,14 +79,14 @@ void read_mnist_labels_file(const std::string filename,
     const uint8_t label_size = 16;
     
     std::ifstream ifs(filename, std::ios::binary);
-    uint8_t buf_header[16];
-    ifs.read(reinterpret_cast<char *> (buf_header), 16);
+    uint8_t buf_header[8];
+    ifs.read(reinterpret_cast<char *> (buf_header), 8);
 
     //const uint64_t magic_number = toDWord(&buf_header[0]);
     //std::cout << "Magic number: " << magic_number << std::endl;
     const uint64_t numberOfImages = toDWord(&buf_header[4]);
     //std::cout << "Number of images: " << numberOfImages << std::endl;
-
+    
     v.resize(label_size*numberOfImages);
     uint8_t b;
     for(size_t i = 0; i < numberOfImages; i++) {
@@ -101,5 +101,22 @@ void read_mnist_labels_file(const std::string filename,
     }
     r = numberOfImages;
     c = label_size;
+}
+
+void print_mnist_image_txt(std::vector<float> &v, size_t offset, uint8_t rows, uint8_t cols) {
+    for (uint8_t i = 0; i < rows; i++) {
+        for(uint8_t j = 0; j < cols; j++) {
+            const float val = v[offset + i*cols + j];
+            std::cout << ((val > 0.2)?"1":"0");
+        }
+        std::cout << std::endl;
+    }
+}
+
+void print_mnist_label_txt(std::vector<float> &v, size_t offset, uint8_t out) {
+    for(uint8_t j = 0; j < out; j++) {
+        std::cout << v[offset + j];
+    }
+    std::cout << std::endl;
 }
 

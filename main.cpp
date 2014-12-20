@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
     const std::string train_file = "train-images.idx3-ubyte";
     const std::string train_labels_file = "train-labels.idx1-ubyte";
     const std::string test_file = "t10k-images.idx3-ubyte";
-    const std::string test_labels_file = "t10k-labels.idx1-ubyte";
+    const std::string test_labels_file = "t10k-labels.idx1-ubyte";      
     
     //nn1.test_matrix_multiplication(1024, 512, 512, 64);
     
@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     //nn1.load_weights(weights_file);
     
     //nn1.test_matrix_multiplication(128, 64, 64, 80);
-    nn1.populate_sparse_weights();
+    nn1.populate_normal_random_weights();
     nn1.train();
     
     return 0;

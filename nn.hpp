@@ -23,6 +23,7 @@ class nn {
     cl_uint numberOfTestData;
     cl_uint numberOfLayers;    
 
+    bool enableMomentumRule = true;
     bool NAG = true;    // true uses Nesterov-accelerated gradient. 
                         // false uses Classical Momentum
     
@@ -30,14 +31,14 @@ class nn {
     cl_float ce = 0.0;  
     cl_float ce_test = 0.0;
     
-    cl_uint minibatchSize = 128;
-    cl_float learningRate = 0.01f;  // Typìcal value 0.3
-    cl_float momentum = 0.4f;      // Typical value 0.9
+    cl_uint minibatchSize = 256;
+    cl_float learningRate = 0.1f;  // Typìcal value 0.3
+    cl_float momentum = 0.9f;      // Typical value 0.9
     size_t maxEpochs = 50000;      // Typical value 5000000
     cl_float minError = 0.001f;     // Typical value 0.01
-    cl_float lambda = 0.1f;     // L2 regularization parameter
+    cl_float lambda = 10.0f;     // L2 regularization parameter (0, 1 , 10, etc.)
     
-    size_t printEpochs = 1000;      // Typical value 1000
+    size_t printEpochs = 500;      // Typical value 1000
     
     std::vector<cl_uint> elementsPerLayer;
     
@@ -56,7 +57,7 @@ class nn {
     // last weight increment calculated from back propagation
     std::vector<cl_float> increment_weights_host;
     // last bias increment calculated from back propagation
-    std::vector<cl_float> increment_bias_host;    
+    // std::vector<cl_float> increment_bias_host;    
     // deltas of all activation layers
     std::vector<cl_float> deltas_host;
     // output values of the training data
@@ -81,7 +82,7 @@ class nn {
     // inputs and calculated activations
     host_device_memory_map<cl_float> weights;  // all the weights of the NN
     host_device_memory_map<cl_float> increment_weights;  // all the inc weights of the NN
-    host_device_memory_map<cl_float> increment_bias;  // all the inc bias of the NN
+    // host_device_memory_map<cl_float> increment_bias;  // all the inc bias of the NN
     host_device_memory_map<cl_float> deltas;   // delta errors (Backprop)
     host_device_memory_map<cl_float> t;        // real output value
     host_device_memory_map<cl_float> t_test;        // real output value
@@ -133,6 +134,7 @@ public:
 
     void populate_sparse_weights(cl_float stddev = 0.1f);
     void populate_random_weights(const cl_float min, const cl_float max);
+    void populate_normal_random_weights(cl_float stddev = 0.1f);
     void populate_fixed_weights(const cl_float val);
     
     void test_matrix_multiplication(const cl_uint nr_rows_A,
@@ -158,6 +160,7 @@ public:
     cl_float L2_regularization();
     
     void BP();  // Backpropagation calculation (all sigmoid))
+    void WA();  // weight actualization
     
     void train();   // Training for all sigmoid
     
