@@ -117,5 +117,7 @@ void print(const matrix_cl_float &m,
            const std::string header = "",
            const bool rows2cols = false);
 
+void save_NN(const std::string filename);
+
 #endif  /* COMMON_HPP */
 

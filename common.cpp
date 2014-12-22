@@ -1,6 +1,5 @@
 #include <string>
 #include <vector>
-
 #include "common.hpp"
 
 typedef boost::tokenizer< boost::escaped_list_separator<char> > Tokenizer;
@@ -165,3 +164,4 @@ void print(const matrix_cl_float &m,
   else
     print_vector(m.data.hostData, m.cols, m.rows, m.offset);
 }
+

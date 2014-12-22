@@ -18,13 +18,7 @@
 // #include "common.hpp"
 #include "mnist.hpp"
 
-nn::nn(
-        const std::string &nn_file,
-        const std::string &train_file,
-        const std::string &train_labels_file,
-        const std::string &test_file,
-        const std::string &test_labels_file
-      ) : activations(activations_host),
+nn::nn() : activations(activations_host),
           activations_test(activations_test_host),
           bias(bias_host),
           weights(weights_host),
@@ -33,23 +27,35 @@ nn::nn(
           deltas(deltas_host),
           t(t_host),
           t_test(t_test_host),
-          cross_entropy_error(cross_entropy_error_host) {
+          buffer_error(buffer_error_host) {
     
+    opencl_init();      
+};
+
+nn::~nn() {     
+    delete openclKernels;
+    delete queue;
+    delete context;
+}
+
+void nn::opencl_init() {
     std::vector<cl::Platform> platforms;
-    cl::Platform::get(&platforms);  // get available OpenCL platforms
-    
+    cl::Platform::get(&platforms);  // get available OpenCL platforms    
     // get OpenCL devices for first platform
-    platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices);
-        
+    platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices);        
     // create a context for these devices
     context = new cl::Context(devices);
-   
     // Create queue of first device
     queue = new cl::CommandQueue(*context, devices[0]);
+    // instantitate kernels
+    openclKernels = new OpenCLKernels(*context, devices, 0, *queue);    
+}
 
-    // load nn structure
-    load_nn_data(nn_file, numberOfLayers, elementsPerLayer);
- 
+void nn::load_MNIST_train_and_test_DATA(
+                    const std::string &train_file,
+                    const std::string &train_labels_file,
+                    const std::string &test_file,
+                    const std::string &test_labels_file) {
     // load input data into host memory
     size_t r,c; // local variables not used
     
@@ -64,13 +70,6 @@ nn::nn(
                            r, 
                            c);
     
-//    load_csv_data(train_file,
-//                  training_data,
-//                  training_data_output,
-//                  numberOfTrainingData,
-//                  elementsPerLayer[0],
-//                  elementsPerLayer[numberOfLayers-1]);
-
     read_mnist_images_file(test_file, 
                            activations_test.hostData,
                            r, 
@@ -80,40 +79,13 @@ nn::nn(
     read_mnist_labels_file(test_labels_file, 
                            t_test.hostData,
                            r, 
-                           c);    
-//    for(int i=0;i<30;i++) {
-//        print_mnist_image_txt(activations_test.hostData, i*28*28);
-//        print_mnist_label_txt(t_test.hostData, i*16);
-//    }
+                           c);
     
-//    load_csv_data(test_file,
-//                  activations_test.hostData,
-//                  t_test.hostData,
-//                  numberOfTestData,
-//                  elementsPerLayer[0],
-//                  elementsPerLayer[numberOfLayers-1]);
-    
-    // host memory allocation for neural network
-    numberOfWeights = 0;
-    numberOfNeurons = 0;
-    for ( cl_uint i = 0; i < numberOfLayers-1; i++ ) {
-        numberOfWeights += elementsPerLayer[i]*elementsPerLayer[i+1];
-        numberOfNeurons += elementsPerLayer[i];
-    }
-    numberOfNeurons += elementsPerLayer[numberOfLayers-1];
-      
-    activations.hostData.resize(numberOfNeurons * minibatchSize);
-    t.hostData.resize(elementsPerLayer[numberOfLayers-1] * minibatchSize);
-    activations_test.hostData.resize(numberOfNeurons * numberOfTestData);
-    bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
-    weights.hostData.resize(numberOfWeights);
-    increment_weights.hostData.resize(numberOfWeights);
-    // increment_bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
-    // there are no deltas in input layer
-    deltas.hostData.resize((numberOfNeurons
-                            -elementsPerLayer[0])*minibatchSize);
-    cross_entropy_error.hostData.resize(CROSS_ENTROPY_ERROR_SIZE);
+    trainDataLoaded = true;
+    testDataLoaded = true;
+}
 
+void nn::calculate_offsets() {
     // calculate offsets of every layer inside the vectors
     activations_offsets.resize(numberOfLayers);
     activations_test_offsets.resize(numberOfLayers);
@@ -135,8 +107,38 @@ nn::nn(
                            elementsPerLayer[i-1]*elementsPerLayer[i];
       bias_offsets[i] = bias_offsets[i-1] + elementsPerLayer[i];
       deltas_offsets[i] = activations_offsets[i] - activations_offsets[1];
+    }    
+}
+
+void nn::allocate_NN_memory_on_host() {
+    // host memory allocation for neural network
+    numberOfWeights = 0;
+    numberOfNeurons = 0;
+    for ( cl_uint i = 0; i < numberOfLayers-1; i++ ) {
+        numberOfWeights += elementsPerLayer[i]*elementsPerLayer[i+1];
+        numberOfNeurons += elementsPerLayer[i];
     }
+    numberOfNeurons += elementsPerLayer[numberOfLayers-1];
     
+    bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
+    weights.hostData.resize(numberOfWeights);
+    increment_weights.hostData.resize(numberOfWeights);
+    // increment_bias.hostData.resize(numberOfNeurons - elementsPerLayer[0]);
+    // there are no deltas in input layer
+    deltas.hostData.resize((numberOfNeurons
+                            -elementsPerLayer[0])*minibatchSize);
+    buffer_error.hostData.resize(BUFFER_ERROR_SIZE);    
+}
+
+// Call it always after allocate_NN_memory_on_host()
+void nn::allocate_DATA_memory_on_host() {
+    activations.hostData.resize(numberOfNeurons * minibatchSize);
+    t.hostData.resize(elementsPerLayer[numberOfLayers-1] * minibatchSize);
+    activations_test.hostData.resize(numberOfNeurons * numberOfTestData);
+    t_test.hostData.resize(elementsPerLayer[numberOfLayers-1] * numberOfTestData);
+}
+
+void nn::allocate_memory_on_device() {
     // device memory allocation
     // Create OpenCL buffers for the matrices based on allocated memory regions
     // Create buffers with CL_MEM_USE_HOST_PTR to minimize copying and
@@ -151,25 +153,19 @@ nn::nn(
     deltas.createBuffer(*context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
     t.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     t_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
-    cross_entropy_error.createBuffer(*context,
+    buffer_error.createBuffer(*context,
                                      CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR);
+    
+}
 
+void nn::load_data_to_device() {
     activations.writeToDevice(*queue);
     activations_test.writeToDevice(*queue);
     bias.writeToDevice(*queue);
     weights.writeToDevice(*queue);
     increment_weights.writeToDevice(*queue);
     t.writeToDevice(*queue);
-    t_test.writeToDevice(*queue);
-        
-    // instantitate kernels
-    openclKernels = new OpenCLKernels(*context, devices, 0, *queue);
-};
-
-nn::~nn() {     
-    delete openclKernels;
-    delete queue;
-    delete context;
+    t_test.writeToDevice(*queue);    
 }
 
 /**
@@ -178,17 +174,18 @@ nn::~nn() {
  * Stddev bibliography values: 0.1, 0.001
  */
 
-void nn::populate_normal_random_weights(cl_float stddev) {
+void nn::populate_normal_random_weights(cl_float mean, cl_float stddev) {
     
   // suppose all the elements are 0 initialized only
   // sets the differents from 0
   boost::mt19937 rng;
-  boost::normal_distribution<> nd(0.0f, stddev);
+  boost::normal_distribution<> nd(mean, stddev);
   boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > var_nor(rng, nd);
 
   for (std::vector<cl_float>::iterator it = weights.hostData.begin();
        it != weights.hostData.end(); ++it)
     *it = var_nor();
+  
 }
 
 
@@ -198,15 +195,18 @@ void nn::populate_normal_random_weights(cl_float stddev) {
  * Stddev bibliography values: 0.1, 0.001
  */
 
-void nn::populate_sparse_weights(cl_float stddev) {
+void nn::populate_normal_sparse_weights(const cl_float mean, 
+                                        const cl_float stddev, 
+                                        const cl_uint initElementsPerLayer) {
     
   // suppose all the elements are 0 initialized only
   // sets the differents from 0
   boost::mt19937 rng;
-  boost::normal_distribution<> nd(0.0f, stddev);
-  boost::variate_generator<boost::mt19937&, boost::normal_distribution<> > var_nor(rng, nd);
+  boost::normal_distribution<> nd(mean, stddev);
+  boost::variate_generator<boost::mt19937&, 
+                           boost::normal_distribution<> > var_nor(rng, nd);
 
-  const cl_uint init_elements = 15;
+  const cl_uint init_elements = initElementsPerLayer;
 
   for (std::vector<cl_float>::iterator it = weights.hostData.begin();
        it != weights.hostData.end(); ++it)
@@ -242,18 +242,20 @@ void nn::populate_fixed_weights(const cl_float val) {
     *it = val;
 }
 
-void nn::FF() {
+void nn::FF(host_device_memory_map<cl_float> &act, 
+            std::vector<cl_uint> &off,
+            cl_uint rows) {
     const cl_uint N = numberOfLayers - 1;
     
-    matrix_cl_float A(activations);
+    matrix_cl_float A(act);
     matrix_cl_float B(weights);
-    matrix_cl_float C(activations);
+    matrix_cl_float C(act);
     matrix_cl_float bias_val(bias); // offset set to 0
     bool calcSigmoid = true;
     for ( cl_uint i = 0; i < N; i++ ) {
-        A.set(minibatchSize, elementsPerLayer[i], activations_offsets[i]);
+        A.set(rows, elementsPerLayer[i], off[i]);
         B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
-        C.set(minibatchSize, elementsPerLayer[i+1], activations_offsets[i+1]);
+        C.set(rows, elementsPerLayer[i+1], off[i+1]);
         bias_val.offset = bias_offsets[i];
         
         if(i == N-1) {
@@ -269,44 +271,26 @@ void nn::FF() {
     }
 }
 
-void nn::FF_test() {
-    const cl_uint N = numberOfLayers - 1;
-    
-    matrix_cl_float A(activations_test);
-    matrix_cl_float B(weights);
-    matrix_cl_float C(activations_test);
-    matrix_cl_float bias_val(bias);
-    bool calcSigmoid = true;
-    for ( cl_uint i = 0; i < N; i++ ) {
-        A.set(numberOfTestData, elementsPerLayer[i], activations_test_offsets[i]);
-        B.set(elementsPerLayer[i], elementsPerLayer[i+1], weights_offsets[i]);
-        C.set(numberOfTestData, elementsPerLayer[i+1], activations_test_offsets[i+1]);
-        bias_val.offset = bias_offsets[i];
-        if(i == N-1) {
-            calcSigmoid = false;
-        }
-        openclKernels->
-                  runMatrixMultiplicationSigmoid(A, B, C, &bias_val, calcSigmoid);
-        
-        if(i == N-1) {
-            // TESTED. WORKING.
-            openclKernels->runSoftMax(C);
-        }
-    }
-}
+cl_float nn::percentage_classification_results(
+            host_device_memory_map<cl_float> &act,
+            std::vector<cl_uint> &act_off,
+            host_device_memory_map<cl_float> &out,
+            cl_uint rows) {
 
+    // out.readFromDevice(*queue); // (doesn't change)
 
-cl_float nn::percentage_classification_results_test() {
-    // t_test.readFromDevice(*queue); // (doesn't change)
-    activations_test.readFromDevice(*queue);    // SE PUEDE ACOTAR PARA NO TANTAS TRANSFERENCIAS SOLO BAJAR OUTPUTS
+    act.readFromDevice(*queue);    // SE PUEDE ACOTAR PARA NO TANTAS TRANSFERENCIAS SOLO BAJAR OUTPUTS
+
     const cl_uint N = elementsPerLayer[numberOfLayers-1];
-    const cl_uint off = activations_test_offsets[numberOfLayers-1];
-    std::vector<cl_float> &v = t_test.hostData;
-    std::vector<cl_float> &w = activations_test.hostData;
+
+    const cl_uint off = act_off[numberOfLayers-1];
+
+    std::vector<cl_float> &v = out.hostData;
+    std::vector<cl_float> &w = act.hostData;
+
     cl_uint good = 0;
-    cl_uint bad = 0;    
-    
-    for(cl_uint i = 0; i < numberOfTestData; i++) {
+    cl_uint bad = 0;        
+    for(cl_uint i = 0; i < rows; i++) {
         cl_float max1 = 0.0f;
         cl_uint pos1 = 0;
         for(cl_uint j = 0; j < N; j++) {
@@ -334,46 +318,6 @@ cl_float nn::percentage_classification_results_test() {
     
     return cl_float(good)/cl_float(good+bad)*100;
 }
-
-cl_float nn::percentage_classification_results_train() {
-    t.readFromDevice(*queue);
-    activations.readFromDevice(*queue);
-    const cl_uint N = elementsPerLayer[elementsPerLayer.size()-1];
-    const cl_uint off = activations_offsets[numberOfLayers-1];
-    std::vector<cl_float> &v = t.hostData;
-    std::vector<cl_float> &w = activations.hostData;
-    cl_uint good = 0;
-    cl_uint bad = 0;    
-    
-    for(cl_uint i = 0; i < minibatchSize; i++) {
-        cl_float max1 = 0.0f;
-        cl_uint pos1 = 0;
-        for(cl_uint j = 0; j < N; j++) {
-            const cl_float val = v[i*N + j];
-            if(val > max1) {
-                pos1 = j;
-                max1 = val;
-            }
-        }
-        cl_float max2 = 0.0f;
-        cl_uint pos2 = 0;
-        for(cl_uint j = 0; j < N; j++) {
-            const cl_float val = w[off+i*N+j];
-            if(val > max2) {
-                pos2 = j;
-                max2 = val;
-            }
-        }
-        if(pos1 == pos2) {
-            good++;
-        } else {
-            bad++;
-        }
-    }
-    
-    return cl_float(good)/cl_float(good+bad)*100;
-}
-
 
 void nn::BP() {
     
@@ -554,14 +498,14 @@ void nn::train() {
         if(NAG) {
             NAG_preupdate();
         }      
-        FF();
+        FF_train();
         if (epoch % printEpochs == 0) {
             const cl_float sqr_weights = L2_regularization();
-            const cl_float ce1 = cross_entropy();
+            const cl_float ce1 = CE_train();
             const cl_float ce2 = 0.5*sqr_weights*lambda/cl_float(numberOfTrainingData);
             ce = ce1 + ce2;    
             FF_test();
-            const cl_float ce1_test = cross_entropy_test();
+            const cl_float ce1_test = CE_test();
             const cl_float ce2_test = 0.5*sqr_weights*lambda/cl_float(numberOfTestData);
             ce_test = ce1_test + ce2_test;
 
@@ -579,22 +523,21 @@ void nn::train() {
             update_momentum_rule_Hinton2013(epoch);
         }
     }
-    
-    weights.readFromDevice(*queue);
-    bias.readFromDevice(*queue);
-    save_float_vector("output_weights.txt", weights_host);
-    save_float_vector("output_bias.txt", bias_host);
 }
 
-cl_float nn::cross_entropy() {
-    matrix_cl_float tm(t);
-    matrix_cl_float act(activations);
-    matrix_cl_float ce(cross_entropy_error);
+cl_float nn::CE(
+                    host_device_memory_map<cl_float> &activ,
+                    std::vector<cl_uint> &off,
+                    host_device_memory_map<cl_float> &out, 
+                    cl_uint rows) {
+    matrix_cl_float tm(out);
+    matrix_cl_float act(activ);
+    matrix_cl_float ce(buffer_error);
 
     const cl_uint elemLastLayer = elementsPerLayer[numberOfLayers-1];
     
-    tm.set(minibatchSize, elemLastLayer, 0);
-    act.set(minibatchSize, elemLastLayer, activations_offsets[numberOfLayers-1]);
+    tm.set(rows, elemLastLayer, 0);
+    act.set(rows, elemLastLayer, off[numberOfLayers-1]);
     
     //act.data.readFromDevice(*queue);
     //tm.data.readFromDevice(*queue);
@@ -604,23 +547,9 @@ cl_float nn::cross_entropy() {
     return openclKernels->runCrossEntropy(tm, act, ce);
 }
 
-cl_float nn::cross_entropy_test() {
-    matrix_cl_float tm(t_test);
-    matrix_cl_float act(activations_test);
-    matrix_cl_float ce(cross_entropy_error);
-
-    const cl_uint elemLastLayer = elementsPerLayer[numberOfLayers-1];
-    
-    tm.set(numberOfTestData, elemLastLayer, 0);
-    act.set(numberOfTestData, elemLastLayer, activations_test_offsets[numberOfLayers-1]);
-
-    return openclKernels->runCrossEntropy(tm, act, ce);
-}
-
-
 cl_float nn::L2_regularization() {
     matrix_cl_float w(weights);
-    matrix_cl_float ce(cross_entropy_error);
+    matrix_cl_float ce(buffer_error);
     
     w.set(1, weights.hostData.size(), 0);
     
@@ -774,4 +703,62 @@ void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
     
     exit(0);
     
+}
+
+/**
+ * Format of the file:
+ *  DATA DESCRIPTION
+ *  Number of layers
+ *  Elements layer 0 (input)
+ *  Elements layer 1 
+ *  ...  
+ *  Weights and Biases present in file (0: false, 1:true)
+ *  bias: This and the rest present only if last = true
+ *  ...
+ *  row-aligned weights (layer0xlayer1 ...)
+ * 
+ */         
+
+void nn::save_NN(const std::string filename) {
+    std::ofstream saveFile (filename, std::ios::out | std::ios::binary);
+    
+    saveFile.write(reinterpret_cast<const char*>(&numberOfLayers), 
+                   sizeof(numberOfLayers));
+    saveFile.write(reinterpret_cast<const char*>(&elementsPerLayer[0]), 
+                   numberOfLayers*sizeof(elementsPerLayer[0]));
+    const bool weightsPresent = true;
+    saveFile.write(reinterpret_cast<const char*>(&weightsPresent), 
+                   sizeof(weightsPresent));
+    bias.readFromDevice(*queue);
+    saveFile.write(reinterpret_cast<const char*>(&bias.hostData[0]), 
+                   bias.hostData.size()*sizeof(cl_float));
+    weights.readFromDevice(*queue);
+    saveFile.write(reinterpret_cast<const char*>(&weights.hostData[0]), 
+                   weights.hostData.size()*sizeof(cl_float));   
+}
+
+void nn::load_NN(const std::string filename) {
+    std::ifstream loadFile (filename, std::ios::in | std::ios::binary);
+    // PENDING
+    loadFile.read(reinterpret_cast<char*>(&numberOfLayers), 
+                  sizeof(numberOfLayers));
+    elementsPerLayer.resize(numberOfLayers);
+    loadFile.read(reinterpret_cast<char*>(&elementsPerLayer[0]), 
+                  numberOfLayers*sizeof(elementsPerLayer[0]));
+    
+    allocate_NN_memory_on_host();
+    
+    bool weightsPresent;    
+    loadFile.read(reinterpret_cast<char*>(&weightsPresent), 
+                  sizeof(weightsPresent));
+    
+    if(weightsPresent) {        
+        loadFile.read(reinterpret_cast<char*>(&bias.hostData[0]), 
+                      bias.hostData.size()*sizeof(cl_float));
+        weights.readFromDevice(*queue);
+        loadFile.read(reinterpret_cast<char*>(&weights.hostData[0]), 
+                      weights.hostData.size()*sizeof(cl_float));   
+    }
+    
+    neuralNetworkDefined = true;
 }
