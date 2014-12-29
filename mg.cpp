@@ -1,8 +1,7 @@
-#include "mg.hpp"
-
 #include <vector>
-#include <boost/random/uniform_int_distribution.hpp>
+#include <random>
 
+#include "mg.hpp"
 
 minibatch_generator::minibatch_generator(cl_uint total_data, 
                                          cl_uint minibatch_size,
@@ -22,13 +21,15 @@ minibatch_generator::minibatch_generator(cl_uint total_data,
                                          to2(to2),
                                          stride2(stride2)
 {
+    std::random_device rd;
+    gen.seed(rd());
     selected.resize(sourceSize);
     index.resize(sourceSize);
     minibatch.resize(destSize);
 }
 
 void minibatch_generator::generate() {
-    boost::random::uniform_int_distribution<> dist(0, sourceSize - 1);
+    std::uniform_int_distribution<cl_uint> dist(0, sourceSize - 1);
 
     for(cl_uint i = 0; i < sourceSize; i++) {
         index[i] = i;

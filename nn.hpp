@@ -28,8 +28,10 @@ class nn {
     cl_uint numberOfLayers;    
 
     bool enableMomentumRule = true;
-    bool NAG = true;    // true uses Nesterov-accelerated gradient. 
-                        // false uses Classical Momentum
+    // enableNAG true uses Nesterov-accelerated gradient. 
+    // enableNAG false uses Classical Momentum
+    bool enableNAG = true;    
+    bool enableL2Regularization = true;
     
     cl_uint epoch = 0;  // epoch of training
     cl_float ce = 0.0;  
@@ -113,14 +115,20 @@ class nn {
         momentum = std::min(momentum_max, new_momentum);                            
     }
 
-    void print_results_data_header();
-    void print_results_data(cl_float ce1, 
+    void print_results_data_header_with_L2_regularization();
+    void print_results_data_with_L2_regularization(
+                            cl_float ce1, 
                             cl_float ce2, 
                             cl_float ce, 
                             cl_float ce1_test, 
                             cl_float ce2_test, 
                             cl_float ce_test);  
-       
+
+    void print_results_data_header();
+    void print_results_data(cl_float ce, 
+                            cl_float ce_test);    
+    void print_data();
+    
     // Nesterov Accelerated Gradient functions
     void NAG_preupdate();
     void NAG_postupdate();

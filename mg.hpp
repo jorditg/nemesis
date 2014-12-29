@@ -10,14 +10,16 @@
 #define	MG_HPP
 
 #include <vector>
-#include <boost/random/mersenne_twister.hpp>
+#include <random>
 
 #include <CL/cl.hpp>
 
 class minibatch_generator {
-    boost::random::mt19937 gen;
+    std::mt19937 gen;
+    
     unsigned sourceSize;
     unsigned destSize;
+    
     std::vector<bool> selected;
     std::vector<cl_uint> index;
     
@@ -26,6 +28,7 @@ class minibatch_generator {
     std::vector<cl_float> &from1;
     std::vector<cl_float> &to1;
     cl_uint stride1;
+    
     std::vector<cl_float> &from2;
     std::vector<cl_float> &to2;
     cl_uint stride2;
@@ -46,4 +49,3 @@ public:
 };
 
 #endif	/* MINIBATCH_GENERATOR_HPP */
-

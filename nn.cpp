@@ -408,7 +408,7 @@ void nn::WA() {
     const size_t wei_sz = wei.data.hostData.size();
     wei.set(1, wei_sz, 0);
     wei_inc.set(1, wei_sz, 0);
-    if(lambda > 1e-10)  // if L2-regularization
+    if(enableL2Regularization)  // if L2-regularization
         openclKernels->runElementWiseSum(wei_inc, wei, wei_inc, 1.0f, - learningRate*lambda/numberOfTrainingData);
     openclKernels->runElementWiseSum(wei, wei_inc, wei);    
 }
@@ -447,12 +447,13 @@ void nn::NAG_postupdate()
                             -momentum);
 }
 
-void nn::print_results_data_header() {
+void nn::print_results_data_header_with_L2_regularization() {
     std::cout << "\tTRAIN\t\t\t\t\t\t\t\tTEST" << std::endl;
     std::cout << "Epoch\tCE1\t\tCE2\t\tCE\t\t\%Train\t\tCE1\t\tCE2\t\tCE\t\t\%Test" << std::endl;
 }
 
-void nn::print_results_data(cl_float ce1, 
+void nn::print_results_data_with_L2_regularization(
+                            cl_float ce1, 
                             cl_float ce2, 
                             cl_float ce, 
                             cl_float ce1_test, 
@@ -470,6 +471,45 @@ void nn::print_results_data(cl_float ce1,
               << percentage_classification_results_test() << "%\n";   
 }
 
+void nn::print_results_data_header() {
+    std::cout << "\tTRAIN\t\t\tTEST" << std::endl;
+    std::cout << "Epoch\tCE\t\t\%Train\t\tCE\t\t\%Test" << std::endl;
+}
+
+void nn::print_results_data(
+                            cl_float ce, 
+                            cl_float ce_test) { 
+    std::cout << std::fixed << std::setprecision(6)
+              << epoch << "\t" 
+              << ce << "\t" 
+              << percentage_classification_results_train() << "%\t"
+              << ce_test << "\t"
+              << percentage_classification_results_test() << "%\n";   
+}
+
+void nn::print_data() {
+        if (epoch % printEpochs == 0) {
+            const cl_float ce_noreg = CE_train();
+
+            FF_test();
+            const cl_float ce_test_noreg = CE_test();
+
+            ce = ce_noreg;
+            ce_test = ce_test_noreg;
+
+            if(enableL2Regularization) {                
+                cl_float sqr_weights = L2_regularization();
+                const cl_float reg = 0.5f*sqr_weights*lambda;
+                const cl_float ce_reg = reg/cl_float(numberOfTrainingData);
+                const cl_float ce_test_reg = reg/cl_float(numberOfTestData);
+                ce += ce_reg;
+                ce_test += ce_test_reg;
+                print_results_data_with_L2_regularization(ce_noreg, ce_reg, ce, ce_test_noreg, ce_test_reg, ce_test);
+            } else {
+                print_results_data(ce, ce_test);
+            }                       
+        }    
+}
 
 void nn::train() {
     minibatch_generator mg(numberOfTrainingData, 
@@ -486,7 +526,10 @@ void nn::train() {
     
     auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
     
-    print_results_data_header();
+    if(enableL2Regularization)
+        print_results_data_header_with_L2_regularization();
+    else
+        print_results_data_header();
     for (epoch = 0; epoch < maxEpochs; epoch++) {
         // wait for minibatch thread to finish
         fut.get();
@@ -495,26 +538,19 @@ void nn::train() {
         t.writeToDevice(*queue, minibatch_size_output_bytes);
         // launch next minibatch calculation
         fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
-        if(NAG) {
+        if(enableNAG) {
             NAG_preupdate();
         }      
+        
         FF_train();
-        if (epoch % printEpochs == 0) {
-            const cl_float sqr_weights = L2_regularization();
-            const cl_float ce1 = CE_train();
-            const cl_float ce2 = 0.5*sqr_weights*lambda/cl_float(numberOfTrainingData);
-            ce = ce1 + ce2;    
-            FF_test();
-            const cl_float ce1_test = CE_test();
-            const cl_float ce2_test = 0.5*sqr_weights*lambda/cl_float(numberOfTestData);
-            ce_test = ce1_test + ce2_test;
-
-            print_results_data(ce1, ce2, ce, ce1_test, ce2_test, ce_test);
-            if (ce < minError) break;
-        }
-            
+        
+        print_data();
+        
+        if (ce < minError) break;
+        
         BP();
-        if(NAG) {
+        
+        if(enableNAG) {
             NAG_postupdate();
         }
         WA();
