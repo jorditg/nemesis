@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     const std::string test_labels_file = "t10k-labels.idx1-ubyte";      
     
     nn nn1;
-
+    
     // load nn structure
     std::vector<cl_uint> neuralnet = {784, 1024, 64, 16};
     nn1.load_NN(neuralnet);
@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
     nn1.populate_normal_random_weights();
     
     nn1.init_training();
+    
     nn1.train();
     
     nn1.save_NN("neural.nn");

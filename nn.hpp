@@ -161,8 +161,10 @@ class nn {
             host_device_memory_map<cl_float> &out, 
             cl_uint rows);
     
-public:
     
+    
+public:
+    void test_dropout();
     nn();
     ~nn();
 
@@ -177,12 +179,6 @@ public:
                                         cl_float stddev = 0.1f);
     
     void populate_fixed_weights(const cl_float val);
-    
-    void test_matrix_multiplication(const cl_uint nr_rows_A,
-                                    const cl_uint nr_cols_A,
-                                    const cl_uint nr_rows_B,
-                                    const cl_uint nr_cols_B);
-
     
     inline void load_float_vector(std::string filename, 
                                   std::vector<cl_float> & v) {
@@ -266,6 +262,11 @@ public:
         allocate_memory_on_device();
         load_data_to_device();  
     }
+    
+//    void test_matrix_multiplication(const cl_uint nr_rows_A,
+//                                    const cl_uint nr_cols_A,
+//                                    const cl_uint nr_rows_B,
+//                                    const cl_uint nr_cols_B);    
 };
 
 #endif

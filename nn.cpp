@@ -17,6 +17,7 @@
 #include "OpenCLKernels.hpp"
 // #include "common.hpp"
 #include "mnist.hpp"
+#include "dng.hpp"
 
 nn::nn() : activations(activations_host),
           activations_test(activations_test_host),
@@ -265,7 +266,6 @@ void nn::FF(host_device_memory_map<cl_float> &act,
         openclKernels->
                   runMatrixMultiplicationSigmoid(A, B, C, &bias_val, calcSigmoid);
         if(i == N-1) {
-            // TESTED. WORKING.
             openclKernels->runSoftMax(C);
         }
     }
@@ -511,6 +511,42 @@ void nn::print_data() {
         }    
 }
 
+void nn::test_dropout() {
+    elementsPerLayer.resize(4);
+    elementsPerLayer[0] = 128;
+    elementsPerLayer[1] = 64;
+    elementsPerLayer[2] = 32;
+    elementsPerLayer[3] = 16;
+    
+    weights_host.resize(10752);
+    for(int i=0;i<128;i++) {
+        for(int j=0;j<64;j++) {
+            weights_host[j] = j*(i+1);
+        }
+    }
+    for(int i=0;i<64;i++) {
+        for(int j=0;j<32;j++) {
+            weights_host[128*64+j] = j*(i+1);
+        }
+    }
+    for(int i=0;i<32;i++) {
+        for(int j=0;j<16;j++) {
+            weights_host[128*64+64*32+j] = j*(i+1);
+        }
+    }
+    
+    weights_offsets.resize(3);
+    weights_offsets[0] = 0;
+    weights_offsets[1] = 128*64;
+    weights_offsets[2] = 128*64+64*32;
+    
+    dng d(elementsPerLayer, weights_host, weights_offsets);
+    
+    d.weigths_dropout();
+    d.weights_update_from_last_dropout();
+}
+
+
 void nn::train() {
     minibatch_generator mg(numberOfTrainingData, 
                            minibatchSize,
@@ -523,14 +559,23 @@ void nn::train() {
                            );
     const size_t minibatch_size_bytes = minibatchSize*elementsPerLayer[0]*sizeof(cl_float);
     const size_t minibatch_size_output_bytes = minibatchSize*elementsPerLayer[numberOfLayers-1]*sizeof(cl_float);
-    
+        
     auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
+    
+    //if(dropout) {
+    //  dng dropout(elementsPerLayer, weights_host, weights_offsets);
+    //}
     
     if(enableL2Regularization)
         print_results_data_header_with_L2_regularization();
     else
         print_results_data_header();
     for (epoch = 0; epoch < maxEpochs; epoch++) {
+        //if(dropout) {
+        //  dropout.weigths_dropout();
+        //  weights.writeToDevice(*queue);
+        //}
+        
         // wait for minibatch thread to finish
         fut.get();
         // load to device the thread calculated minibatch
@@ -554,6 +599,11 @@ void nn::train() {
             NAG_postupdate();
         }
         WA();
+        
+        //if(dropout) {
+            //weights.readFromDevice(*queue);
+            //dropout.weights_update_from_last_dropout();
+        //}
         
         if(enableMomentumRule) {
             update_momentum_rule_Hinton2013(epoch);
@@ -592,154 +642,6 @@ cl_float nn::L2_regularization() {
     return openclKernels->runL2Regularization(w, ce);
 }
 
-
-void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
-                                    const cl_uint nr_cols_A,
-                                    const cl_uint nr_rows_B,
-                                    const cl_uint nr_cols_B) {
-  boost::random::mt19937 gen;
-  boost::random::uniform_real_distribution<> dist(-5.0f, 5.0f);
-  
-    matrix_cl_float A(deltas);
-    matrix_cl_float B(activations);
-    matrix_cl_float C(weights);
-    
-    assert(nr_rows_A % 4 == 0 &&
-           nr_rows_B % 4 == 0 &&
-           nr_cols_A % 4 == 0 &&
-           nr_cols_B % 4 == 0 &&
-           nr_cols_A == nr_rows_B);
-    
-    // Test of not transposed matrices ( CHECKED. IT WORKS!)
-    
-    const cl_uint nr_rows_C = nr_rows_A;
-    const cl_uint nr_cols_C = nr_cols_B;
-    
-    for (cl_uint i = 0; i < nr_rows_A; i++) {
-        for (cl_uint j = 0; j < nr_cols_A; j++) {
-            //A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
-            A.data.hostData[j + nr_cols_A*i] = dist(gen);
-        }
-    }
-    
-    for (cl_uint i = 0; i < nr_rows_B; i++) {
-        for (cl_uint j = 0; j < nr_cols_B; j++) {
-            //B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
-            B.data.hostData[j + nr_cols_B*i] = dist(gen);
-        }
-    }
-    
-    A.set(nr_rows_A, nr_cols_A, 0);
-    B.set(nr_rows_B, nr_cols_B, 0);
-    C.set(nr_rows_C, nr_cols_C, 0);
-    
-    A.data.writeToDevice(*queue);
-    B.data.writeToDevice(*queue);
-    
-    openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C);
-    C.data.readFromDevice(*queue);
-
-    print(A, "A");
-    print(B, "B");
-    print(C, "Not transposed matrices");
-
-    // Test A transposed
-    
-    for (cl_uint i = 0; i < nr_cols_A; i++) {
-        for (cl_uint j = 0; j < nr_rows_A; j++) {
-            //A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
-            A.data.hostData[j + nr_rows_A*i] = dist(gen);
-        }
-    }
-    
-    for (cl_uint i = 0; i < nr_rows_B; i++) {
-        for (cl_uint j = 0; j < nr_cols_B; j++) {
-            //B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
-            B.data.hostData[j + nr_cols_B*i] = dist(gen);
-        }
-    }
-    
-    A.set(nr_rows_A, nr_cols_A, 0, true);
-    B.set(nr_rows_B, nr_cols_B, 0);
-    C.set(nr_rows_C, nr_cols_C, 0);
-
-    A.data.writeToDevice(*queue);
-    B.data.writeToDevice(*queue);
-    
-    openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C);
-    C.data.readFromDevice(*queue);
-
-    print(A, "A", true);
-    print(B, "B");
-    print(C, "Result with A transposed");
-
-    // Test B transposed
-    
-    for (cl_uint i = 0; i < nr_rows_A; i++) {
-        for (cl_uint j = 0; j < nr_cols_A; j++) {
-            //A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
-            A.data.hostData[j + nr_cols_A*i] = dist(gen);
-        }
-    }
-    
-    for (cl_uint i = 0; i < nr_cols_B; i++) {
-        for (cl_uint j = 0; j < nr_rows_B; j++) {
-            //B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
-            B.data.hostData[j + nr_rows_B*i] = dist(gen);
-        }
-    }
-    
-    A.set(nr_rows_A, nr_cols_A, 0);
-    B.set(nr_rows_B, nr_cols_B, 0, true);
-    C.set(nr_rows_C, nr_cols_C, 0);
-
-    A.data.writeToDevice(*queue);
-    B.data.writeToDevice(*queue);
-    
-    openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C);
-    C.data.readFromDevice(*queue);
-
-    print(A, "A");
-    print(B, "B", true);
-    print(C, "Result with B transposed");
-
-    // Test A and B transposed
-    
-    for (cl_uint i = 0; i < nr_cols_A; i++) {
-        for (cl_uint j = 0; j < nr_rows_A; j++) {
-            //A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
-            A.data.hostData[j + nr_rows_A*i] = dist(gen);
-        }
-    }
-    
-    for (cl_uint i = 0; i < nr_cols_B; i++) {
-        for (cl_uint j = 0; j < nr_rows_B; j++) {
-            //B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
-            B.data.hostData[j + nr_rows_B*i] = dist(gen);
-        }
-    }
-    
-    A.set(nr_rows_A, nr_cols_A, 0, true);
-    B.set(nr_rows_B, nr_cols_B, 0, true);
-    C.set(nr_rows_C, nr_cols_C, 0);
-
-    A.data.writeToDevice(*queue);
-    B.data.writeToDevice(*queue);
-    
-    openclKernels->
-            runMatrixMultiplicationSigmoid(A, B, C);
-    C.data.readFromDevice(*queue);
-
-    print(A, "A", true);
-    print(B, "B", true);
-    print(C, "Result with A and B transposed");
-    
-    exit(0);
-    
-}
 
 /**
  * Format of the file:
@@ -798,3 +700,151 @@ void nn::load_NN(const std::string filename) {
     
     neuralNetworkDefined = true;
 }
+
+//void nn::test_matrix_multiplication(const cl_uint nr_rows_A,
+//                                    const cl_uint nr_cols_A,
+//                                    const cl_uint nr_rows_B,
+//                                    const cl_uint nr_cols_B) {
+//  boost::random::mt19937 gen;
+//  boost::random::uniform_real_distribution<> dist(-5.0f, 5.0f);
+//  
+//    matrix_cl_float A(deltas);
+//    matrix_cl_float B(activations);
+//    matrix_cl_float C(weights);
+//    
+//    assert(nr_rows_A % 4 == 0 &&
+//           nr_rows_B % 4 == 0 &&
+//           nr_cols_A % 4 == 0 &&
+//           nr_cols_B % 4 == 0 &&
+//           nr_cols_A == nr_rows_B);
+//    
+//    // Test of not transposed matrices ( CHECKED. IT WORKS!)
+//    
+//    const cl_uint nr_rows_C = nr_rows_A;
+//    const cl_uint nr_cols_C = nr_cols_B;
+//    
+//    for (cl_uint i = 0; i < nr_rows_A; i++) {
+//        for (cl_uint j = 0; j < nr_cols_A; j++) {
+//            //A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
+//            A.data.hostData[j + nr_cols_A*i] = dist(gen);
+//        }
+//    }
+//    
+//    for (cl_uint i = 0; i < nr_rows_B; i++) {
+//        for (cl_uint j = 0; j < nr_cols_B; j++) {
+//            //B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+//            B.data.hostData[j + nr_cols_B*i] = dist(gen);
+//        }
+//    }
+//    
+//    A.set(nr_rows_A, nr_cols_A, 0);
+//    B.set(nr_rows_B, nr_cols_B, 0);
+//    C.set(nr_rows_C, nr_cols_C, 0);
+//    
+//    A.data.writeToDevice(*queue);
+//    B.data.writeToDevice(*queue);
+//    
+//    openclKernels->
+//            runMatrixMultiplicationSigmoid(A, B, C);
+//    C.data.readFromDevice(*queue);
+//
+//    print(A, "A");
+//    print(B, "B");
+//    print(C, "Not transposed matrices");
+//
+//    // Test A transposed
+//    
+//    for (cl_uint i = 0; i < nr_cols_A; i++) {
+//        for (cl_uint j = 0; j < nr_rows_A; j++) {
+//            //A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
+//            A.data.hostData[j + nr_rows_A*i] = dist(gen);
+//        }
+//    }
+//    
+//    for (cl_uint i = 0; i < nr_rows_B; i++) {
+//        for (cl_uint j = 0; j < nr_cols_B; j++) {
+//            //B.data.hostData[j + nr_cols_B*i] = 1.0f/cl_float(i+1);
+//            B.data.hostData[j + nr_cols_B*i] = dist(gen);
+//        }
+//    }
+//    
+//    A.set(nr_rows_A, nr_cols_A, 0, true);
+//    B.set(nr_rows_B, nr_cols_B, 0);
+//    C.set(nr_rows_C, nr_cols_C, 0);
+//
+//    A.data.writeToDevice(*queue);
+//    B.data.writeToDevice(*queue);
+//    
+//    openclKernels->
+//            runMatrixMultiplicationSigmoid(A, B, C);
+//    C.data.readFromDevice(*queue);
+//
+//    print(A, "A", true);
+//    print(B, "B");
+//    print(C, "Result with A transposed");
+//
+//    // Test B transposed
+//    
+//    for (cl_uint i = 0; i < nr_rows_A; i++) {
+//        for (cl_uint j = 0; j < nr_cols_A; j++) {
+//            //A.data.hostData[j + nr_cols_A*i] = cl_float(j+1);
+//            A.data.hostData[j + nr_cols_A*i] = dist(gen);
+//        }
+//    }
+//    
+//    for (cl_uint i = 0; i < nr_cols_B; i++) {
+//        for (cl_uint j = 0; j < nr_rows_B; j++) {
+//            //B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
+//            B.data.hostData[j + nr_rows_B*i] = dist(gen);
+//        }
+//    }
+//    
+//    A.set(nr_rows_A, nr_cols_A, 0);
+//    B.set(nr_rows_B, nr_cols_B, 0, true);
+//    C.set(nr_rows_C, nr_cols_C, 0);
+//
+//    A.data.writeToDevice(*queue);
+//    B.data.writeToDevice(*queue);
+//    
+//    openclKernels->
+//            runMatrixMultiplicationSigmoid(A, B, C);
+//    C.data.readFromDevice(*queue);
+//
+//    print(A, "A");
+//    print(B, "B", true);
+//    print(C, "Result with B transposed");
+//
+//    // Test A and B transposed
+//    
+//    for (cl_uint i = 0; i < nr_cols_A; i++) {
+//        for (cl_uint j = 0; j < nr_rows_A; j++) {
+//            //A.data.hostData[j + nr_rows_A*i] = cl_float(i+1);
+//            A.data.hostData[j + nr_rows_A*i] = dist(gen);
+//        }
+//    }
+//    
+//    for (cl_uint i = 0; i < nr_cols_B; i++) {
+//        for (cl_uint j = 0; j < nr_rows_B; j++) {
+//            //B.data.hostData[j + nr_rows_B*i] = 1.0f/cl_float(j+1);
+//            B.data.hostData[j + nr_rows_B*i] = dist(gen);
+//        }
+//    }
+//    
+//    A.set(nr_rows_A, nr_cols_A, 0, true);
+//    B.set(nr_rows_B, nr_cols_B, 0, true);
+//    C.set(nr_rows_C, nr_cols_C, 0);
+//
+//    A.data.writeToDevice(*queue);
+//    B.data.writeToDevice(*queue);
+//    
+//    openclKernels->
+//            runMatrixMultiplicationSigmoid(A, B, C);
+//    C.data.readFromDevice(*queue);
+//
+//    print(A, "A", true);
+//    print(B, "B", true);
+//    print(C, "Result with A and B transposed");
+//    
+//    exit(0);
+//    
+//}
