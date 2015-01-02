@@ -34,13 +34,6 @@ dng::dng(std::vector<cl_uint> &el,
     }    
 }
 
-// A pesar de ser bueno porque te da las neuronas con una probabilidad de 0,5 
-// no es bueno para nuestro algoritmo porque requerimos matrices múltiplos de
-// 8 y es raro que se de e3sa coincidencia. Utilizaremos por tanto uno que 
-// reporte medida fija igual a la mitad exacta de las neuronas de cada capa
-// de esta forma será más fácil controlar que cumplen con el requisito de 
-// multiplos de 8
-
 void dng::weigths_dropout() {
     std::uint64_t rnd = gen();
     std::uint8_t used = 0;    
@@ -126,7 +119,10 @@ void dng::weights_update_from_last_dropout() {
                                 weightsActualEpoch[ciae + j];                        
             }
         }
-    
+        for(cl_uint j = 0; j < indexes[l].size(); j++) {
+            biasAll[biasOffsets[l-1] + indexes[l][j]] = 
+                    biasActualEpoch[biasOffsetsActualEpoch[l-1] + j]; 
+        }    
     }
 }
 
@@ -135,4 +131,8 @@ void dng::transfer_all_weights_to_nn() {
     std::copy(weightsAll.begin(), weightsAll.end(), weightsActualEpoch.begin());
     std::copy(elementsPerLayer.begin(), elementsPerLayer.end(), elementsPerLayerActualEpoch.begin());
     std::copy(weightsOffsets.begin(), weightsOffsets.end(), weightsOffsetsActualEpoch.begin());
+
+    biasActualEpoch.resize(biasAll.size());
+    std::copy(biasAll.begin(), biasAll.end(), biasActualEpoch.begin());
+    std::copy(biasOffsets.begin(), biasOffsets.end(), biasOffsetsActualEpoch.begin());
 }
