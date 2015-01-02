@@ -511,42 +511,6 @@ void nn::print_data() {
         }    
 }
 
-void nn::test_dropout() {
-    elementsPerLayer.resize(4);
-    elementsPerLayer[0] = 128;
-    elementsPerLayer[1] = 64;
-    elementsPerLayer[2] = 32;
-    elementsPerLayer[3] = 16;
-    
-    weights_host.resize(10752);
-    for(int i=0;i<128;i++) {
-        for(int j=0;j<64;j++) {
-            weights_host[j] = j*(i+1);
-        }
-    }
-    for(int i=0;i<64;i++) {
-        for(int j=0;j<32;j++) {
-            weights_host[128*64+j] = j*(i+1);
-        }
-    }
-    for(int i=0;i<32;i++) {
-        for(int j=0;j<16;j++) {
-            weights_host[128*64+64*32+j] = j*(i+1);
-        }
-    }
-    
-    weights_offsets.resize(3);
-    weights_offsets[0] = 0;
-    weights_offsets[1] = 128*64;
-    weights_offsets[2] = 128*64+64*32;
-    
-    dng d(elementsPerLayer, weights_host, weights_offsets);
-    
-    d.weigths_dropout();
-    d.weights_update_from_last_dropout();
-}
-
-
 void nn::train() {
     minibatch_generator mg(numberOfTrainingData, 
                            minibatchSize,
@@ -563,7 +527,7 @@ void nn::train() {
     auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
     
     //if(dropout) {
-    //  dng dropout(elementsPerLayer, weights_host, weights_offsets);
+      dng dropout(elementsPerLayer, weights_host, weights_offsets, bias_host, bias_offsets);
     //}
     
     if(enableL2Regularization)
@@ -572,8 +536,8 @@ void nn::train() {
         print_results_data_header();
     for (epoch = 0; epoch < maxEpochs; epoch++) {
         //if(dropout) {
-        //  dropout.weigths_dropout();
-        //  weights.writeToDevice(*queue);
+          dropout.weigths_dropout();
+          weights.writeToDevice(*queue);
         //}
         
         // wait for minibatch thread to finish
@@ -601,8 +565,8 @@ void nn::train() {
         WA();
         
         //if(dropout) {
-            //weights.readFromDevice(*queue);
-            //dropout.weights_update_from_last_dropout();
+            weights.readFromDevice(*queue);
+            dropout.weights_update_from_last_dropout();
         //}
         
         if(enableMomentumRule) {
@@ -848,3 +812,55 @@ void nn::load_NN(const std::string filename) {
 //    exit(0);
 //    
 //}
+
+void nn::test_dropout() {
+    elementsPerLayer.resize(4);
+    elementsPerLayer[0] = 24;
+    elementsPerLayer[1] = 16;
+    elementsPerLayer[2] = 12;
+    elementsPerLayer[3] = 4;
+    
+    const size_t weights_sz = 24*16+16*12+12*4;
+    
+    weights_host.resize(weights_sz);
+    
+    for(size_t i=0;i<weights_sz;i++) {
+        weights_host[i] = (i+1)%10;
+    }
+    
+    weights_offsets.resize(3);
+    weights_offsets[0] = 0;
+    weights_offsets[1] = 24*16;
+    weights_offsets[2] = 24*16 + 16*12;
+    
+    dng d(elementsPerLayer, weights_host, weights_offsets);
+    
+    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
+    std::cout << "\n";
+    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
+    std::cout << "\n";
+    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
+    std::cout << "\n";
+    
+    d.weigths_dropout();
+    
+    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
+    std::cout << "\n";
+    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
+    std::cout << "\n";
+    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
+    std::cout << "\n";
+        
+    d.weights_update_from_last_dropout();
+    
+    d.transfer_all_weights_to_nn();
+    
+    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
+    std::cout << "\n";
+    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
+    std::cout << "\n";
+    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
+    std::cout << "\n";
+        
+}
+
