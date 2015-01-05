@@ -21,8 +21,8 @@ int main(int argc, char** argv) {
     nn nn1;
 
     // load nn structure
-    std::vector<cl_uint> neuralnet = {784, 1024, 64, 16};
-    nn1.load_NN(neuralnet);
+    std::vector<cl_uint> neuralnet = {784, 2048, 2048, 16};
+    nn1.load_NN(neuralnet);    
     
     // load training and test data
     nn1.load_MNIST_train_and_test_DATA(        

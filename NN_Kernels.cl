@@ -430,3 +430,16 @@ __kernel void rowSumKernel(__global float4 * matrixA,
     
     bias_inc[gid] = a + b;
 }
+
+/* 
+ *  1 dimensional NDRange = number of columns of floats / 4 
+ *  Sums the values of all the rows
+ */
+__kernel void matrixScalarMultiplicationKernel
+                          (__global float4 * matrix,
+                           float scalar)
+{
+    const int gid = get_global_id(0);
+    matrix[gid] *= scalar;
+}
+

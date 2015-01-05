@@ -77,6 +77,10 @@ class OpenCLKernels {
             matrix_cl_float &result,
             cl_float multExisting = 0.0f,
             cl_float multNew = 1.0f);
+    
+    void runMatrixScalarMultiplication(
+            matrix_cl_float const &matrix,
+            cl_float scalar);
   private:
     const std::string sourceFile = "NN_Kernels.cl";
     
@@ -119,7 +123,11 @@ class OpenCLKernels {
     
     cl::Kernel *rowSumKernel;
     const std::string rowSumKernel_name =
-                      "rowSumKernel";    
+                      "rowSumKernel";
+    
+    cl::Kernel *matrixScalarMultiplicationKernel;
+    const std::string matrixScalarMultiplicationKernel_name = 
+                      "matrixScalarMultiplicationKernel";
     
     bool lds;
     

@@ -14,6 +14,7 @@
 #include "common.hpp"
 
 OpenCLKernels::~OpenCLKernels() {
+    delete matrixScalarMultiplicationKernel;
     delete rowSumKernel;
     delete softmaxKernelLocal;
     delete elementWiseMultiplicationBySigmoidDerivativeKernel;
@@ -83,6 +84,10 @@ void OpenCLKernels::opencl_init() {
       rowSumKernel =
               new cl::Kernel(*program,
                              rowSumKernel_name.c_str());
+      
+      matrixScalarMultiplicationKernel = 
+              new cl::Kernel(*program,
+                             matrixScalarMultiplicationKernel_name.c_str());
       
     } catch(const cl::Error &e) {
         std::cout << e.err() << e.what() << std::endl;
@@ -454,4 +459,20 @@ void OpenCLKernels::runRowSum(
                                offset,
                                global);
     queue.finish();
+}
+
+void OpenCLKernels::runMatrixScalarMultiplication(
+            matrix_cl_float const &matrix, cl_float scalar) {
+    
+    size_t global_size[1] = {matrix.cols * matrix.rows / 4};
+    
+    matrixScalarMultiplicationKernel->setArg(0, *(matrix.data.deviceData));
+    matrixScalarMultiplicationKernel->setArg(1, scalar);
+    
+    const cl::NDRange offset = cl::NullRange;
+    const cl::NDRange global(global_size[0]);
+    queue.enqueueNDRangeKernel(*matrixScalarMultiplicationKernel,
+                               offset,
+                               global);
+    queue.finish();    
 }

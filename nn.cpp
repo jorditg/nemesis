@@ -478,37 +478,40 @@ void nn::print_results_data_header() {
 
 void nn::print_results_data(
                             cl_float ce, 
-                            cl_float ce_test) { 
+                            cl_float ce_test) {
+    const cl_float training_percentage = percentage_classification_results_train();
+    const cl_float test_percentage = percentage_classification_results_test();
+    
+    //if(test_percentage > 70) learningRate = 0.01;
+    
     std::cout << std::fixed << std::setprecision(6)
               << epoch << "\t" 
               << ce << "\t" 
-              << percentage_classification_results_train() << "%\t"
+              << training_percentage << "%\t"
               << ce_test << "\t"
-              << percentage_classification_results_test() << "%\n";   
+              << test_percentage << "%\n";   
 }
 
 void nn::print_data() {
-        if (epoch % printEpochs == 0) {
-            const cl_float ce_noreg = CE_train();
+    const cl_float ce_noreg = CE_train();
 
-            FF_test();
-            const cl_float ce_test_noreg = CE_test();
+    FF_test();
+    const cl_float ce_test_noreg = CE_test();
 
-            ce = ce_noreg;
-            ce_test = ce_test_noreg;
+    ce = ce_noreg;
+    ce_test = ce_test_noreg;
 
-            if(enableL2Regularization) {                
-                cl_float sqr_weights = L2_regularization();
-                const cl_float reg = 0.5f*sqr_weights*lambda;
-                const cl_float ce_reg = reg/cl_float(numberOfTrainingData);
-                const cl_float ce_test_reg = reg/cl_float(numberOfTestData);
-                ce += ce_reg;
-                ce_test += ce_test_reg;
-                print_results_data_with_L2_regularization(ce_noreg, ce_reg, ce, ce_test_noreg, ce_test_reg, ce_test);
-            } else {
-                print_results_data(ce, ce_test);
-            }                       
-        }    
+    if(enableL2Regularization) {                
+        cl_float sqr_weights = L2_regularization();
+        const cl_float reg = 0.5f*sqr_weights*lambda;
+        const cl_float ce_reg = reg/cl_float(numberOfTrainingData);
+        const cl_float ce_test_reg = reg/cl_float(numberOfTestData);
+        ce += ce_reg;
+        ce_test += ce_test_reg;
+        print_results_data_with_L2_regularization(ce_noreg, ce_reg, ce, ce_test_noreg, ce_test_reg, ce_test);
+    } else {
+        print_results_data(ce, ce_test);
+    }                                   
 }
 
 void nn::train() {
@@ -526,20 +529,19 @@ void nn::train() {
         
     auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
     
-    //if(dropout) {
+#if DROPOUT
       dng dropout(elementsPerLayer, weights_host, weights_offsets, bias_host, bias_offsets);
-    //}
+#endif
     
     if(enableL2Regularization)
         print_results_data_header_with_L2_regularization();
     else
         print_results_data_header();
     for (epoch = 0; epoch < maxEpochs; epoch++) {
-        //if(dropout) {
+#if DROPOUT
           dropout.weigths_dropout();
           weights.writeToDevice(*queue);
-        //}
-        
+#endif        
         // wait for minibatch thread to finish
         fut.get();
         // load to device the thread calculated minibatch
@@ -553,8 +555,18 @@ void nn::train() {
         
         FF_train();
         
-        print_data();
-        
+        if (epoch % printEpochs == 0) {
+#if DROPOUT
+            // if dropout we have to load all the weights and multiply them
+            // by 0.5 in order to make the correct inference
+            dropout.transfer_all_weights_to_nn();
+            weights.writeToDevice(*queue);
+            matrix_cl_float W(weights);
+            W.set(weights.hostData.size(), 1);
+            openclKernels->runMatrixScalarMultiplication(W, 0.5f);
+#endif            
+            print_data();
+        }
         if (ce < minError) break;
         
         BP();
@@ -564,11 +576,10 @@ void nn::train() {
         }
         WA();
         
-        //if(dropout) {
+#if DROPOUT
             weights.readFromDevice(*queue);
             dropout.weights_update_from_last_dropout();
-        //}
-        
+#endif        
         if(enableMomentumRule) {
             update_momentum_rule_Hinton2013(epoch);
         }
@@ -576,10 +587,10 @@ void nn::train() {
 }
 
 cl_float nn::CE(
-                    host_device_memory_map<cl_float> &activ,
-                    std::vector<cl_uint> &off,
-                    host_device_memory_map<cl_float> &out, 
-                    cl_uint rows) {
+        host_device_memory_map<cl_float> &activ,
+        std::vector<cl_uint> &off,
+        host_device_memory_map<cl_float> &out, 
+        cl_uint rows) {
     matrix_cl_float tm(out);
     matrix_cl_float act(activ);
     matrix_cl_float ce(buffer_error);
@@ -813,54 +824,83 @@ void nn::load_NN(const std::string filename) {
 //    
 //}
 
-void nn::test_dropout() {
-    elementsPerLayer.resize(4);
-    elementsPerLayer[0] = 24;
-    elementsPerLayer[1] = 16;
-    elementsPerLayer[2] = 12;
-    elementsPerLayer[3] = 4;
-    
-    const size_t weights_sz = 24*16+16*12+12*4;
-    
-    weights_host.resize(weights_sz);
-    
-    for(size_t i=0;i<weights_sz;i++) {
-        weights_host[i] = (i+1)%10;
-    }
-    
-    weights_offsets.resize(3);
-    weights_offsets[0] = 0;
-    weights_offsets[1] = 24*16;
-    weights_offsets[2] = 24*16 + 16*12;
-    
-    dng d(elementsPerLayer, weights_host, weights_offsets);
-    
-    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
-    std::cout << "\n";
-    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
-    std::cout << "\n";
-    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
-    std::cout << "\n";
-    
-    d.weigths_dropout();
-    
-    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
-    std::cout << "\n";
-    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
-    std::cout << "\n";
-    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
-    std::cout << "\n";
-        
-    d.weights_update_from_last_dropout();
-    
-    d.transfer_all_weights_to_nn();
-    
-    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
-    std::cout << "\n";
-    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
-    std::cout << "\n";
-    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
-    std::cout << "\n";
-        
-}
-
+//void nn::test_dropout() {
+//    elementsPerLayer.resize(4);
+//    elementsPerLayer[0] = 24;
+//    elementsPerLayer[1] = 16;
+//    elementsPerLayer[2] = 12;
+//    elementsPerLayer[3] = 4;
+//    
+//    const size_t weights_sz = 24*16+16*12+12*4;
+//    
+//    weights_host.resize(weights_sz);
+//    
+//    for(size_t i=0;i<weights_sz;i++) {
+//        weights_host[i] = (i+1)%10;
+//    }
+//    
+//    weights_offsets.resize(3);
+//    weights_offsets[0] = 0;
+//    weights_offsets[1] = 24*16;
+//    weights_offsets[2] = 24*16 + 16*12;
+//    
+//    bias_host.resize(4+12+16);
+//    bias_offsets.resize(3);    
+//
+//    for(size_t i=0;i<bias_host.size();i++) {
+//        bias_host[i] = (i+1)%10;
+//    }
+//    
+//    bias_offsets[0] = 0;
+//    bias_offsets[1] = 16;
+//    bias_offsets[2] = 16+12;
+//
+//    dng d(elementsPerLayer, weights_host, weights_offsets, bias_host, bias_offsets);
+//    
+//    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
+//    std::cout << "\n";
+//    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
+//    std::cout << "\n";
+//    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[1], 1, bias_offsets[0]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[2], 1, bias_offsets[1]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[3], 1, bias_offsets[2]);
+//    std::cout << "\n";
+//    
+//    d.weigths_dropout();
+//    
+//    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
+//    std::cout << "\n";
+//    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
+//    std::cout << "\n";
+//    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[1], 1, bias_offsets[0]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[2], 1, bias_offsets[1]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[3], 1, bias_offsets[2]);
+//    std::cout << "\n";
+//        
+//    d.weights_update_from_last_dropout();
+//    
+//    d.transfer_all_weights_to_nn();
+//    
+//    print_vector(weights_host, elementsPerLayer[0], elementsPerLayer[1], weights_offsets[0]);
+//    std::cout << "\n";
+//    print_vector(weights_host, elementsPerLayer[1], elementsPerLayer[2], weights_offsets[1]);
+//    std::cout << "\n";
+//    print_vector(weights_host, elementsPerLayer[2], elementsPerLayer[3], weights_offsets[2]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[1], 1, bias_offsets[0]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[2], 1, bias_offsets[1]);
+//    std::cout << "\n";
+//    print_vector(bias_host, elementsPerLayer[3], 1, bias_offsets[2]);
+//    std::cout << "\n";
+//        
+//}
+//
