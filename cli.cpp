@@ -151,6 +151,12 @@ void cli::loop() {
         is >> std::skipws >> token;
 
         if (token == "quit") {
+            if(neural_network.isTraining()) {
+                neural_network.stopTrain();    
+                std::cout << "Stopping training...\n";
+                while(neural_network.isTraining());
+                std::cout << "Training Stopped\n";
+            }            
             break;
         } else if (token == "set") {
             set(is, cmd);

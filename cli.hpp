@@ -25,6 +25,7 @@ private:
     void load(std::istringstream & is, const std::string & cmd);
     void save(std::istringstream & is, const std::string & cmd);
     void train(std::istringstream & is, const std::string & cmd);
+    void plot();
     
     inline void unknown_command_msg(const std::string & cmd) { 
         std::cout << "Unknown command: " << cmd << std::endl; 
