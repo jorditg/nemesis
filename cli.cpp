@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <stdexcept>      // std::invalid_argument
+#include <cstdlib>  // system() 
 
 #include "CL/cl.hpp"
 
@@ -82,7 +83,7 @@ void cli::load (std::istringstream & is, const std::string & cmd) {
             TODO_msg(cmd);
             return;
         } else if (what == "nn") {
-            TODO_msg(cmd);
+            neural_network.loadNN(filepath);
             return;
         }
     }
@@ -101,7 +102,7 @@ void cli::save (std::istringstream & is, const std::string & cmd) {
     
     if(!filepath.empty()) {
         if (what == "nn") {
-            TODO_msg(cmd);
+            neural_network.saveNN(filepath);
             return;
         } 
     }
@@ -115,14 +116,25 @@ void cli::train(std::istringstream & is, const std::string & cmd) {
     is >> what;
     
     if (what == "run") {
-        train_thread = new std::thread t(nn::train, &neural_network);
-    } else if (what == "pause") {
-        TODO_msg(cmd);
-    } else if (what == "stop") {
-        TODO_msg(cmd);        
+        if(neural_network.isTraining()) {
+            std::cout << "NN already running" << "\n";
+        } else {
+            std::thread t(nn::train, &neural_network);
+        }
+    } else if (what == "pause" || what == "stop") {
+        if(neural_network.isTraining()) {
+            neural_network.stopTrain();    
+            std::cout << "Stopping training...\n";
+            while(neural_network.isTraining());
+            std::cout << "Training Stopped\n";
+        }
     } else {
         unknown_command_msg(cmd);
     }
+}
+
+void cli::plot() {
+    
 }
 
 void cli::loop() {
@@ -148,6 +160,8 @@ void cli::loop() {
             save(is, cmd);
         } else if (token == "train") {
             train(is, cmd);
+        } else if (token == "plot") {
+            plot();
         } else {
             unknown_command_msg(cmd);
         }

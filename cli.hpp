@@ -14,14 +14,12 @@
 
 class cli {
 public:
-    //inline cli(nn & nn_v) : neural_network(nn_v) {};
-    inline cli(nn &nn1) : neural_network(nn1) {};
+    inline cli(nn & nn_v) : neural_network(nn_v) {};
     virtual ~cli();
     
     void loop();
 private:
     nn & neural_network;
-    std::thread *train_thread;
     
     void set(std::istringstream & is, const std::string & cmd);
     void load(std::istringstream & is, const std::string & cmd);
