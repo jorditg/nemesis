@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <string>
 #include "nn.hpp"
+#include "cli.hpp"
 
 /*
  *
@@ -19,7 +20,9 @@ int main(int argc, char** argv) {
     const std::string test_labels_file = "t10k-labels.idx1-ubyte";      
     
     nn nn1;
-
+    
+    cli CLI(nn1);
+    
     // load nn structure
     std::vector<cl_uint> neuralnet = {784, 2048, 2048, 16};
     nn1.load_NN(neuralnet);    
@@ -35,9 +38,11 @@ int main(int argc, char** argv) {
     
     nn1.init_training();
     
-    nn1.train();
+    CLI.loop();
     
-    nn1.save_NN("neural.nn");
+    //nn1.train();
+    
+    //nn1.save_NN("neural.nn");
     
     return 0;
 }

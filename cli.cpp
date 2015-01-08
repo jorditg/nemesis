@@ -8,28 +8,52 @@
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <string>
+#include <stdexcept>      // std::invalid_argument
+
+#include "CL/cl.hpp"
 
 #include "cli.hpp"
+#include "nn.hpp"
 
-
-int main() {
-    cli CLI;
-    
-    CLI.loop();
-}
 
 cli::~cli() {
+    if(train_thread != nullptr) delete train_thread;
 }
 
-void cli::set(std::istringstream & is, const std::string & cmd) {
-    std::string token;
+void cli::set(std::istringstream & is, const std::string & cmd) {    
     
+    if(neural_network.isTraining()) {
+        std::cout << "Error: NN training.\n";
+        std::cout << "       Use <pause> or <stop> before using <set> command" << "\n";
+        return;
+    }
+    
+    bool error = false;
+    
+    std::string token;
     is >> token;
     
-    if (token == "lr") {    // set the learning rate
-        TODO_msg(cmd);
-    } else if (token == "momentum") {   // set the momentum
-        TODO_msg(cmd);
+    if (token == "lr" || token == "momentum") {    
+        std::string val;
+        is >> val;
+        cl_float v;
+        try {
+            v = std::stof(val);
+        } catch (const std::invalid_argument& ia) {
+            error = true;
+        }
+        if (val < 0.0f || val > 1.0f) error = true;
+        
+        if(!error) {
+            if(token == "lr") {
+                neural_network.setLR(val);
+            } else {
+                neural_network.setM(val);
+            }
+        } else {
+            std::cout << "Error: Not valid value. Should be between 0.0 and 1.0\n"
+        }
     } else if (token == "nag") {    // set NAG
         TODO_msg(cmd);
     } else if (token == "rule") {   // set a new rule
@@ -91,7 +115,7 @@ void cli::train(std::istringstream & is, const std::string & cmd) {
     is >> what;
     
     if (what == "run") {
-        TODO_msg(cmd);
+        train_thread = new std::thread t(nn::train, &neural_network);
     } else if (what == "pause") {
         TODO_msg(cmd);
     } else if (what == "stop") {

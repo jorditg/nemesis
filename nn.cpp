@@ -515,6 +515,11 @@ void nn::print_data() {
 }
 
 void nn::train() {
+    
+    if(trainRunning) return;    // only one training at time allowed
+    
+    trainRunning = true;
+    
     minibatch_generator mg(numberOfTrainingData, 
                            minibatchSize,
                            training_data,
@@ -538,6 +543,12 @@ void nn::train() {
     else
         print_results_data_header();
     for (epoch = 0; epoch < maxEpochs; epoch++) {
+        
+        if(stopTraining) {
+            stopTraining = false;
+            break;
+        }
+        
 #if DROPOUT
           dropout.weigths_dropout();
           weights.writeToDevice(*queue);
@@ -584,6 +595,8 @@ void nn::train() {
             update_momentum_rule_Hinton2013(epoch);
         }
     }
+      
+    trainRunning = false;
 }
 
 cl_float nn::CE(

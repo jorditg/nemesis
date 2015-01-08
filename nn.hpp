@@ -22,7 +22,11 @@
 class nn {
     bool neuralNetworkDefined = false;
     bool trainDataLoaded = false;
-    bool testDataLoaded = false;        
+    bool testDataLoaded = false;      
+    
+    bool trainRunning = false;  
+    
+    bool stopTraining = false;
     
     const cl_uint BUFFER_ERROR_SIZE = 2*1048576;
     
@@ -174,10 +178,19 @@ class nn {
     
     
 public:
-    void test_dropout();
+    
     nn();
     ~nn();
 
+    
+    // void test_dropout();
+    
+    inline bool isTraining() { return trainRunning; }
+    inline void stopTrain() { stopTraining = true; }
+    
+    inline void setLR(cl_float lr) { learningRate = lr; }
+    inline void setM(cl_float m) { momentum = m; }
+    
     void populate_normal_sparse_weights(const cl_float mean = 0.0f, 
                                         const cl_float stddev = 0.1f, 
                                         const cl_uint initElementsPerLayer = 15);
