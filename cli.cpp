@@ -5,12 +5,11 @@
  * Created on 23 de diciembre de 2014, 14:53
  */
 
+#include <cstdlib>  // system()
 #include <string>
 #include <sstream>
-#include <iostream>
-#include <string>
 #include <stdexcept>      // std::invalid_argument
-#include <cstdlib>  // system() 
+#include <iostream>
 
 #include "CL/cl.hpp"
 
@@ -19,14 +18,12 @@
 
 
 cli::~cli() {
-    if(train_thread != nullptr) delete train_thread;
 }
 
-void cli::set(std::istringstream & is, const std::string & cmd) {    
-    
-    if(neural_network.isTraining()) {
+void cli::set(std::istringstream & is, const std::string & cmd) {
+    if (neural_network.isTraining()) {
         std::cout << "Error: NN training.\n";
-        std::cout << "       Use <pause> or <stop> before using <set> command" << "\n";
+        std::cout << "       Use <pause> or <stop> before using <set> command\n";
         return;
     }
     
@@ -35,47 +32,47 @@ void cli::set(std::istringstream & is, const std::string & cmd) {
     std::string token;
     is >> token;
     
-    if (token == "lr" || token == "momentum") {    
+    if (token == "lr" || token == "momentum") {
         std::string val;
         is >> val;
         cl_float v;
         try {
             v = std::stof(val);
-        } catch (const std::invalid_argument& ia) {
+        } catch(const std::invalid_argument & ia) {
             error = true;
         }
-        if (val < 0.0f || val > 1.0f) error = true;
+        if (v < 0.0f || v > 1.0f) error = true;
         
-        if(!error) {
-            if(token == "lr") {
-                neural_network.setLR(val);
+        if (!error) {
+            if (token == "lr") {
+                neural_network.setLR(v);
             } else {
-                neural_network.setM(val);
+                neural_network.setM(v);
             }
         } else {
-            std::cout << "Error: Not valid value. Should be between 0.0 and 1.0\n"
+          std::cout << "Error: Not valid value. Should be between 0.0 and 1.0\n";
         }
     } else if (token == "nag") {    // set NAG
         TODO_msg(cmd);
     } else if (token == "rule") {   // set a new rule
         TODO_msg(cmd);
-    } else if (token == "nn") { // set a NN architecture
+    } else if (token == "nn") {  // set a NN architecture
         TODO_msg(cmd);
     } else {
         unknown_command_msg(cmd);
     }
 }
 
-void cli::load (std::istringstream & is, const std::string & cmd) {
+void cli::load(std::istringstream & is, const std::string & cmd) {
     std::string what, filepath;
     
     is >> what;
-    is >> filepath; // should be "/file/path"
+    is >> filepath;  // should be "/file/path"
     if (filepath[0] == '\"' && filepath[filepath.size()-1] == '\"') {
         filepath = filepath.substr(1, filepath.size()-2);
     }
     
-    if(!filepath.empty()) {
+    if (!filepath.empty()) {
         if (what == "trainingset") {
             TODO_msg(cmd);
             return;
@@ -83,7 +80,7 @@ void cli::load (std::istringstream & is, const std::string & cmd) {
             TODO_msg(cmd);
             return;
         } else if (what == "nn") {
-            neural_network.loadNN(filepath);
+            neural_network.load_NN(filepath);
             return;
         }
     }
@@ -91,23 +88,23 @@ void cli::load (std::istringstream & is, const std::string & cmd) {
     unknown_command_msg(cmd);
 }
 
-void cli::save (std::istringstream & is, const std::string & cmd) {
+void cli::save(std::istringstream & is, const std::string & cmd) {
     std::string what, filepath;
     
     is >> what;
-    is >> filepath; // should be "/file/path"
+    is >> filepath;  // should be "/file/path"
     if (filepath[0] == '\"' && filepath[filepath.size()-1] == '\"') {
         filepath = filepath.substr(1, filepath.size()-2);
     }
     
-    if(!filepath.empty()) {
+    if (!filepath.empty()) {
         if (what == "nn") {
-            neural_network.saveNN(filepath);
+            neural_network.save_NN(filepath);
             return;
-        } 
+        }
     }
     // if no return before => command error
-    unknown_command_msg(cmd);    
+    unknown_command_msg(cmd);
 }
 
 void cli::train(std::istringstream & is, const std::string & cmd) {
@@ -116,16 +113,17 @@ void cli::train(std::istringstream & is, const std::string & cmd) {
     is >> what;
     
     if (what == "run") {
-        if(neural_network.isTraining()) {
+        if (neural_network.isTraining()) {
             std::cout << "NN already running" << "\n";
         } else {
-            std::thread t(nn::train, &neural_network);
+            std::thread t(&nn::train, &neural_network);
+            t.detach();
         }
     } else if (what == "pause" || what == "stop") {
-        if(neural_network.isTraining()) {
-            neural_network.stopTrain();    
+        if (neural_network.isTraining()) {
+            neural_network.stopTrain();
             std::cout << "Stopping training...\n";
-            while(neural_network.isTraining());
+            while (neural_network.isTraining());
             std::cout << "Training Stopped\n";
         }
     } else {
@@ -138,11 +136,12 @@ void cli::plot() {
 }
 
 void cli::loop() {
+    std::string token, cmd;
     
-    std::string token, cmd;    
-    
+    std::cout << "Neural network command line interface v0.0:\n";
+    std::cout << ">> ";
     do {
-        if (!getline(std::cin, cmd)) // Block here waiting for input
+        if (!getline(std::cin, cmd))  // Block here waiting for input
             cmd = "quit";
         
         std::istringstream is(cmd);
@@ -151,12 +150,12 @@ void cli::loop() {
         is >> std::skipws >> token;
 
         if (token == "quit") {
-            if(neural_network.isTraining()) {
-                neural_network.stopTrain();    
+            if (neural_network.isTraining()) {
+                neural_network.stopTrain();
                 std::cout << "Stopping training...\n";
-                while(neural_network.isTraining());
+                while (neural_network.isTraining());
                 std::cout << "Training Stopped\n";
-            }            
+            }
             break;
         } else if (token == "set") {
             set(is, cmd);
@@ -171,6 +170,7 @@ void cli::loop() {
         } else {
             unknown_command_msg(cmd);
         }
+        std::cout << ">> ";
     } while (token != "quit");
 
 }

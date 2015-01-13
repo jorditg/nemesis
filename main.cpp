@@ -5,30 +5,32 @@
  * Created on 9 de octubre de 2014, 21:24
  */
 
+#include <vector>
 #include <cstdlib>
 #include <string>
+
 #include "nn.hpp"
 #include "cli.hpp"
 
 /*
  *
  */
-int main(int argc, char** argv) {  
+int main(int argc, char** argv) {
     const std::string train_file = "train-images.idx3-ubyte";
     const std::string train_labels_file = "train-labels.idx1-ubyte";
     const std::string test_file = "t10k-images.idx3-ubyte";
-    const std::string test_labels_file = "t10k-labels.idx1-ubyte";      
+    const std::string test_labels_file = "t10k-labels.idx1-ubyte";
     
     nn nn1;
     
-    cli CLI(nn1);
+    // cli CLI(nn1);
     
     // load nn structure
     std::vector<cl_uint> neuralnet = {784, 2048, 2048, 16};
-    nn1.load_NN(neuralnet);    
+    nn1.load_NN(neuralnet);
     
     // load training and test data
-    nn1.load_MNIST_train_and_test_DATA(        
+    nn1.load_MNIST_train_and_test_DATA(
         train_file,
         train_labels_file,
         test_file,
@@ -38,11 +40,11 @@ int main(int argc, char** argv) {
     
     nn1.init_training();
     
-    CLI.loop();
+    // CLI.loop();
     
-    //nn1.train();
+    nn1.train();
     
-    //nn1.save_NN("neural.nn");
+    nn1.save_NN("neural.nn");
     
     return 0;
 }

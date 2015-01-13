@@ -2,8 +2,8 @@ CC=g++
 CFLAGS=-g --std=c++11 -Wall
 LIBFLAGS=-lOpenCL -pthread
 
-HEADERS=nn.hpp OpenCLKernels.hpp common.hpp mg.hpp mnist.hpp dng.hpp
-SOURCES=main.cpp nn.cpp OpenCLKernels.cpp common.cpp mg.cpp mnist.cpp dng.cpp
+HEADERS=nn.hpp OpenCLKernels.hpp common.hpp mg.hpp mnist.hpp dng.hpp cli.hpp
+SOURCES=main.cpp nn.cpp OpenCLKernels.cpp common.cpp mg.cpp mnist.cpp dng.cpp cli.cpp
 EXECUTABLE=nn-opencl
 
 all: $(EXECUTABLE)

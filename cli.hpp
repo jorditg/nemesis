@@ -6,19 +6,20 @@
  */
 
 #ifndef CLI_HPP
-#define	CLI_HPP
+#define CLI_HPP
 
-#include <iostream>
 #include <thread>
+#include <string>
+#include <iostream>
 #include "nn.hpp"
 
 class cli {
-public:
-    inline cli(nn & nn_v) : neural_network(nn_v) {};
+ public:
+    inline explicit cli(nn & nn_v) : neural_network(nn_v) {}
     virtual ~cli();
     
     void loop();
-private:
+ private:
     nn & neural_network;
     
     void set(std::istringstream & is, const std::string & cmd);
@@ -27,15 +28,15 @@ private:
     void train(std::istringstream & is, const std::string & cmd);
     void plot();
     
-    inline void unknown_command_msg(const std::string & cmd) { 
-        std::cout << "Unknown command: " << cmd << std::endl; 
+    inline void unknown_command_msg(const std::string & cmd) {
+        std::cout << "Unknown command: " << cmd << std::endl;
     };
 
-    inline void TODO_msg(const std::string & cmd) { 
-        std::cout << "TODO option: " << cmd << std::endl; 
+    inline void TODO_msg(const std::string & cmd) {
+        std::cout << "TODO option: " << cmd << std::endl;
     };
        
 };
 
-#endif	/* CLI_HPP */
+#endif /* CLI_HPP */
 

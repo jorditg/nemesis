@@ -9,9 +9,9 @@
 #include <vector>
 #include <algorithm>
 #include <string>
-#include <iostream>
 #include <iomanip>
 #include <future>
+#include <iostream>
 
 #include "nn.hpp"
 #include "OpenCLKernels.hpp"
@@ -30,10 +30,10 @@ nn::nn() : activations(activations_host),
           t_test(t_test_host),
           buffer_error(buffer_error_host) {
     
-    opencl_init();      
-};
+    opencl_init();
+}
 
-nn::~nn() {     
+nn::~nn() {
     delete openclKernels;
     delete queue;
     delete context;
@@ -41,15 +41,15 @@ nn::~nn() {
 
 void nn::opencl_init() {
     std::vector<cl::Platform> platforms;
-    cl::Platform::get(&platforms);  // get available OpenCL platforms    
+    cl::Platform::get(&platforms);  // get available OpenCL platforms
     // get OpenCL devices for first platform
-    platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices);        
+    platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices);
     // create a context for these devices
     context = new cl::Context(devices);
     // Create queue of first device
     queue = new cl::CommandQueue(*context, devices[0]);
     // instantitate kernels
-    openclKernels = new OpenCLKernels(*context, devices, 0, *queue);    
+    openclKernels = new OpenCLKernels(*context, devices, 0, *queue);
 }
 
 void nn::load_MNIST_train_and_test_DATA(
@@ -58,28 +58,28 @@ void nn::load_MNIST_train_and_test_DATA(
                     const std::string &test_file,
                     const std::string &test_labels_file) {
     // load input data into host memory
-    size_t r,c; // local variables not used
+    size_t r, c;  // local variables not used
     
-    read_mnist_images_file(train_file, 
-                           training_data, 
-                           r, 
+    read_mnist_images_file(train_file,
+                           training_data,
+                           r,
                            c);
     numberOfTrainingData = static_cast<cl_uint>(r);
     
-    read_mnist_labels_file(train_labels_file, 
-                           training_data_output, 
-                           r, 
+    read_mnist_labels_file(train_labels_file,
+                           training_data_output,
+                           r,
                            c);
     
-    read_mnist_images_file(test_file, 
+    read_mnist_images_file(test_file,
                            activations_test.hostData,
-                           r, 
+                           r,
                            c);
     numberOfTestData = static_cast<cl_uint>(r);
     
-    read_mnist_labels_file(test_labels_file, 
+    read_mnist_labels_file(test_labels_file,
                            t_test.hostData,
-                           r, 
+                           r,
                            c);
     
     trainDataLoaded = true;
@@ -108,7 +108,7 @@ void nn::calculate_offsets() {
                            elementsPerLayer[i-1]*elementsPerLayer[i];
       bias_offsets[i] = bias_offsets[i-1] + elementsPerLayer[i];
       deltas_offsets[i] = activations_offsets[i] - activations_offsets[1];
-    }    
+    }
 }
 
 void nn::allocate_NN_memory_on_host() {
@@ -128,7 +128,7 @@ void nn::allocate_NN_memory_on_host() {
     // there are no deltas in input layer
     deltas.hostData.resize((numberOfNeurons
                             -elementsPerLayer[0])*minibatchSize);
-    buffer_error.hostData.resize(BUFFER_ERROR_SIZE);    
+    buffer_error.hostData.resize(BUFFER_ERROR_SIZE);
 }
 
 // Call it always after allocate_NN_memory_on_host()
@@ -144,7 +144,7 @@ void nn::allocate_memory_on_device() {
     // Create OpenCL buffers for the matrices based on allocated memory regions
     // Create buffers with CL_MEM_USE_HOST_PTR to minimize copying and
     // model situation when matrices are hosted by some native library that
-    // uses OpenCL to accelerate calculations.  
+    // uses OpenCL to accelerate calculations
     activations.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     activations_test.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
     bias.createBuffer(*context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR);
@@ -166,7 +166,7 @@ void nn::load_data_to_device() {
     weights.writeToDevice(*queue);
     increment_weights.writeToDevice(*queue);
     t.writeToDevice(*queue);
-    t_test.writeToDevice(*queue);    
+    t_test.writeToDevice(*queue);
 }
 
 /**
@@ -204,7 +204,7 @@ void nn::populate_normal_sparse_weights(const cl_float mean,
   // sets the differents from 0
   boost::mt19937 rng;
   boost::normal_distribution<> nd(mean, stddev);
-  boost::variate_generator<boost::mt19937&, 
+  boost::variate_generator<boost::mt19937&,
                            boost::normal_distribution<> > var_nor(rng, nd);
 
   const cl_uint init_elements = initElementsPerLayer;
@@ -213,15 +213,16 @@ void nn::populate_normal_sparse_weights(const cl_float mean,
        it != weights.hostData.end(); ++it)
     *it = 0.0f;
 
-  for(cl_uint i = 1; i < numberOfLayers; i++) {
-      boost::random::uniform_real_distribution<> dist(0, elementsPerLayer[i-1]-1);
-      for(cl_uint to_idx = 0; to_idx < elementsPerLayer[i]; to_idx++) {         
-          for(cl_uint k = 0; k < init_elements; k++) {
+  for (cl_uint i = 1; i < numberOfLayers; i++) {
+      boost::random::uniform_real_distribution<>
+                   dist(0, elementsPerLayer[i-1]-1);
+      for (cl_uint to_idx = 0; to_idx < elementsPerLayer[i]; to_idx++) {
+          for (cl_uint k = 0; k < init_elements; k++) {
               const cl_uint from_idx = dist(rng);
-              const cl_uint idx = weights_offsets[i-1] + 
-                                  elementsPerLayer[i] * from_idx + 
+              const cl_uint idx = weights_offsets[i-1] +
+                                  elementsPerLayer[i] * from_idx +
                                   to_idx;
-              weights.hostData[idx] = var_nor();              
+              weights.hostData[idx] = var_nor();
           }
       }
   }
@@ -243,7 +244,7 @@ void nn::populate_fixed_weights(const cl_float val) {
     *it = val;
 }
 
-void nn::FF(host_device_memory_map<cl_float> &act, 
+void nn::FF(host_device_memory_map<cl_float> &act,
             std::vector<cl_uint> &off,
             cl_uint rows) {
     const cl_uint N = numberOfLayers - 1;
@@ -251,7 +252,7 @@ void nn::FF(host_device_memory_map<cl_float> &act,
     matrix_cl_float A(act);
     matrix_cl_float B(weights);
     matrix_cl_float C(act);
-    matrix_cl_float bias_val(bias); // offset set to 0
+    matrix_cl_float bias_val(bias);  // offset set to 0
     bool calcSigmoid = true;
     for ( cl_uint i = 0; i < N; i++ ) {
         A.set(rows, elementsPerLayer[i], off[i]);
@@ -259,13 +260,13 @@ void nn::FF(host_device_memory_map<cl_float> &act,
         C.set(rows, elementsPerLayer[i+1], off[i+1]);
         bias_val.offset = bias_offsets[i];
         
-        if(i == N-1) {
+        if (i == N-1) {
             calcSigmoid = false;
         }
         
         openclKernels->
                   runMatrixMultiplicationSigmoid(A, B, C, &bias_val, calcSigmoid);
-        if(i == N-1) {
+        if (i == N-1) {
             openclKernels->runSoftMax(C);
         }
     }
@@ -279,7 +280,8 @@ cl_float nn::percentage_classification_results(
 
     // out.readFromDevice(*queue); // (doesn't change)
 
-    act.readFromDevice(*queue);    // SE PUEDE ACOTAR PARA NO TANTAS TRANSFERENCIAS SOLO BAJAR OUTPUTS
+    act.readFromDevice(*queue);
+    // SE PUEDE ACOTAR PARA NO TANTAS TRANSFERENCIAS SOLO BAJAR OUTPUTS
 
     const cl_uint N = elementsPerLayer[numberOfLayers-1];
 
@@ -289,27 +291,27 @@ cl_float nn::percentage_classification_results(
     std::vector<cl_float> &w = act.hostData;
 
     cl_uint good = 0;
-    cl_uint bad = 0;        
-    for(cl_uint i = 0; i < rows; i++) {
+    cl_uint bad = 0;
+    for (cl_uint i = 0; i < rows; i++) {
         cl_float max1 = 0.0f;
         cl_uint pos1 = 0;
-        for(cl_uint j = 0; j < N; j++) {
+        for (cl_uint j = 0; j < N; j++) {
             const cl_float val = v[i*N+j];
-            if(val > max1) {
+            if (val > max1) {
                 pos1 = j;
                 max1 = val;
             }
         }
         cl_float max2 = 0.0f;
         cl_uint pos2 = 0;
-        for(cl_uint j = 0; j < N; j++) {
+        for (cl_uint j = 0; j < N; j++) {
             const cl_float val = w[off+i*N+j];
-            if(val > max2) {
+            if (val > max2) {
                 pos2 = j;
                 max2 = val;
             }
         }
-        if(pos1 == pos2) {
+        if (pos1 == pos2) {
             good++;
         } else {
             bad++;
@@ -364,7 +366,7 @@ void nn::BP() {
                 activations_offsets[i]);
         openclKernels->
             runElementWiseMultiplicationBySigmoidDerivativeKernel(del_r, act);
-    }   
+    }
 }
 
 void nn::WA() {
@@ -398,24 +400,25 @@ void nn::WA() {
                             nullptr,
                             false,
                             sum,
-                            momentum,  
+                            momentum,
                             -learningRateOverMinibatchSize);
         
-        openclKernels->runRowSum(del, bias_val, 1.0f, -learningRateOverMinibatchSize);
+        openclKernels->runRowSum(del, bias_val, 1.0f,
+                                 -learningRateOverMinibatchSize);
                 
     }
 
     const size_t wei_sz = wei.data.hostData.size();
     wei.set(1, wei_sz, 0);
     wei_inc.set(1, wei_sz, 0);
-    if(enableL2Regularization)  // if L2-regularization
-        openclKernels->runElementWiseSum(wei_inc, wei, wei_inc, 1.0f, - learningRate*lambda/numberOfTrainingData);
-    openclKernels->runElementWiseSum(wei, wei_inc, wei);    
+    if (enableL2Regularization)  // if L2-regularization
+        openclKernels->runElementWiseSum(wei_inc, wei, wei_inc,
+                     1.0f, - learningRate*lambda/numberOfTrainingData);
+    openclKernels->runElementWiseSum(wei, wei_inc, wei);
 }
 
 
-void nn::NAG_preupdate()
-{
+void nn::NAG_preupdate() {
     matrix_cl_float wei(weights);
     matrix_cl_float wei_inc(increment_weights);
     const size_t wei_size = weights.hostData.size();
@@ -428,11 +431,9 @@ void nn::NAG_preupdate()
                             wei,
                             1.0f,
                             momentum);
-    
 }
 
-void nn::NAG_postupdate()
-{
+void nn::NAG_postupdate() {
     matrix_cl_float wei(weights);
     matrix_cl_float wei_inc(increment_weights);
     const size_t wei_size = weights.hostData.size();
@@ -449,47 +450,47 @@ void nn::NAG_postupdate()
 
 void nn::print_results_data_header_with_L2_regularization() {
     std::cout << "\tTRAIN\t\t\t\t\t\t\t\tTEST" << std::endl;
-    std::cout << "Epoch\tCE1\t\tCE2\t\tCE\t\t\%Train\t\tCE1\t\tCE2\t\tCE\t\t\%Test" << std::endl;
+    std::cout << "Epoch\tCE1\t\tCE2\t\tCE\t\t%Train\t\tCE1\t\tCE2\t\tCE\t\t%Test\n";
 }
 
 void nn::print_results_data_with_L2_regularization(
-                            cl_float ce1, 
-                            cl_float ce2, 
-                            cl_float ce, 
-                            cl_float ce1_test, 
-                            cl_float ce2_test, 
-                            cl_float ce_test) { 
+                            cl_float ce1,
+                            cl_float ce2,
+                            cl_float ce,
+                            cl_float ce1_test,
+                            cl_float ce2_test,
+                            cl_float ce_test) {
     std::cout << std::fixed << std::setprecision(6)
-              << epoch << "\t" 
-              << ce1 << "\t" 
-              << ce2 << "\t" 
-              << ce << "\t" 
+              << epoch << "\t"
+              << ce1 << "\t"
+              << ce2 << "\t"
+              << ce << "\t"
               << percentage_classification_results_train() << "%\t"
               << ce1_test << "\t"
               << ce2_test << "\t"
               << ce_test << "\t"
-              << percentage_classification_results_test() << "%\n";   
+              << percentage_classification_results_test() << "%\n";
 }
 
 void nn::print_results_data_header() {
-    std::cout << "\tTRAIN\t\t\tTEST" << std::endl;
-    std::cout << "Epoch\tCE\t\t\%Train\t\tCE\t\t\%Test" << std::endl;
+    std::cout << "\tTRAIN\t\t\tTEST\n";
+    std::cout << "Epoch\tCE\t\t%Train\t\tCE\t\t%Test\n";
 }
 
 void nn::print_results_data(
-                            cl_float ce, 
+                            cl_float ce,
                             cl_float ce_test) {
     const cl_float training_percentage = percentage_classification_results_train();
     const cl_float test_percentage = percentage_classification_results_test();
     
-    //if(test_percentage > 70) learningRate = 0.01;
+    // if(test_percentage > 70) learningRate = 0.01;
     
     std::cout << std::fixed << std::setprecision(6)
-              << epoch << "\t" 
-              << ce << "\t" 
+              << epoch << "\t"
+              << ce << "\t"
               << training_percentage << "%\t"
               << ce_test << "\t"
-              << test_percentage << "%\n";   
+              << test_percentage << "%\n";
 }
 
 void nn::print_data() {
@@ -501,7 +502,7 @@ void nn::print_data() {
     ce = ce_noreg;
     ce_test = ce_test_noreg;
 
-    if(enableL2Regularization) {                
+    if (enableL2Regularization) {
         cl_float sqr_weights = L2_regularization();
         const cl_float reg = 0.5f*sqr_weights*lambda;
         const cl_float ce_reg = reg/cl_float(numberOfTrainingData);
@@ -511,16 +512,17 @@ void nn::print_data() {
         print_results_data_with_L2_regularization(ce_noreg, ce_reg, ce, ce_test_noreg, ce_test_reg, ce_test);
     } else {
         print_results_data(ce, ce_test);
-    }                                   
+    }       
 }
 
 void nn::train() {
     
-    if(trainRunning) return;    // only one training at time allowed
+    if (trainRunning) return;
+    // only one training at time allowed
     
     trainRunning = true;
     
-    minibatch_generator mg(numberOfTrainingData, 
+    minibatch_generator mg(numberOfTrainingData,
                            minibatchSize,
                            training_data,
                            activations.hostData,
@@ -529,22 +531,29 @@ void nn::train() {
                            t.hostData,
                            elementsPerLayer[numberOfLayers-1]
                            );
-    const size_t minibatch_size_bytes = minibatchSize*elementsPerLayer[0]*sizeof(cl_float);
-    const size_t minibatch_size_output_bytes = minibatchSize*elementsPerLayer[numberOfLayers-1]*sizeof(cl_float);
+    const size_t minibatch_size_bytes = minibatchSize*elementsPerLayer[0]*
+                                        sizeof(cl_float);
+    const size_t minibatch_size_output_bytes =
+                     minibatchSize*
+                     elementsPerLayer[numberOfLayers-1]*sizeof(cl_float);
         
     auto fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
     
 #if DROPOUT
-      dng dropout(elementsPerLayer, weights_host, weights_offsets, bias_host, bias_offsets);
+      dng dropout(elementsPerLayer,
+                  weights_host,
+                  weights_offsets,
+                  bias_host,
+                  bias_offsets);
 #endif
     
-    if(enableL2Regularization)
+    if (enableL2Regularization)
         print_results_data_header_with_L2_regularization();
     else
         print_results_data_header();
     for (epoch = 0; epoch < maxEpochs; epoch++) {
         
-        if(stopTraining) {
+        if (stopTraining) {
             stopTraining = false;
             break;
         }
@@ -552,7 +561,7 @@ void nn::train() {
 #if DROPOUT
           dropout.weigths_dropout();
           weights.writeToDevice(*queue);
-#endif        
+#endif
         // wait for minibatch thread to finish
         fut.get();
         // load to device the thread calculated minibatch
@@ -560,9 +569,9 @@ void nn::train() {
         t.writeToDevice(*queue, minibatch_size_output_bytes);
         // launch next minibatch calculation
         fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
-        if(enableNAG) {
+        if (enableNAG) {
             NAG_preupdate();
-        }      
+        }    
         
         FF_train();
         
@@ -575,14 +584,14 @@ void nn::train() {
             matrix_cl_float W(weights);
             W.set(weights.hostData.size(), 1);
             openclKernels->runMatrixScalarMultiplication(W, 0.5f);
-#endif            
+#endif
             print_data();
         }
         if (ce < minError) break;
         
         BP();
         
-        if(enableNAG) {
+        if (enableNAG) {
             NAG_postupdate();
         }
         WA();
@@ -590,8 +599,8 @@ void nn::train() {
 #if DROPOUT
             weights.readFromDevice(*queue);
             dropout.weights_update_from_last_dropout();
-#endif        
-        if(enableMomentumRule) {
+#endif
+        if (enableMomentumRule) {
             update_momentum_rule_Hinton2013(epoch);
         }
     }
@@ -602,7 +611,7 @@ void nn::train() {
 cl_float nn::CE(
         host_device_memory_map<cl_float> &activ,
         std::vector<cl_uint> &off,
-        host_device_memory_map<cl_float> &out, 
+        host_device_memory_map<cl_float> &out,
         cl_uint rows) {
     matrix_cl_float tm(out);
     matrix_cl_float act(activ);
@@ -613,10 +622,10 @@ cl_float nn::CE(
     tm.set(rows, elemLastLayer, 0);
     act.set(rows, elemLastLayer, off[numberOfLayers-1]);
     
-    //act.data.readFromDevice(*queue);
-    //tm.data.readFromDevice(*queue);
-    //print(act, "y");
-    //print(tm, "t");
+    // act.data.readFromDevice(*queue);
+    // tm.data.readFromDevice(*queue);
+    // print(act, "y");
+    // print(tm, "t");
 
     return openclKernels->runCrossEntropy(tm, act, ce);
 }
@@ -646,44 +655,44 @@ cl_float nn::L2_regularization() {
  */         
 
 void nn::save_NN(const std::string filename) {
-    std::ofstream saveFile (filename, std::ios::out | std::ios::binary);
+    std::ofstream saveFile(filename, std::ios::out | std::ios::binary);
     
-    saveFile.write(reinterpret_cast<const char*>(&numberOfLayers), 
+    saveFile.write(reinterpret_cast<const char*>(&numberOfLayers),
                    sizeof(numberOfLayers));
-    saveFile.write(reinterpret_cast<const char*>(&elementsPerLayer[0]), 
+    saveFile.write(reinterpret_cast<const char*>(&elementsPerLayer[0]),
                    numberOfLayers*sizeof(elementsPerLayer[0]));
     const bool weightsPresent = true;
-    saveFile.write(reinterpret_cast<const char*>(&weightsPresent), 
+    saveFile.write(reinterpret_cast<const char*>(&weightsPresent),
                    sizeof(weightsPresent));
     bias.readFromDevice(*queue);
-    saveFile.write(reinterpret_cast<const char*>(&bias.hostData[0]), 
+    saveFile.write(reinterpret_cast<const char*>(&bias.hostData[0]),
                    bias.hostData.size()*sizeof(cl_float));
     weights.readFromDevice(*queue);
-    saveFile.write(reinterpret_cast<const char*>(&weights.hostData[0]), 
-                   weights.hostData.size()*sizeof(cl_float));   
+    saveFile.write(reinterpret_cast<const char*>(&weights.hostData[0]),
+                   weights.hostData.size()*sizeof(cl_float));
 }
 
 void nn::load_NN(const std::string filename) {
-    std::ifstream loadFile (filename, std::ios::in | std::ios::binary);
+    std::ifstream loadFile(filename, std::ios::in | std::ios::binary);
     // PENDING
-    loadFile.read(reinterpret_cast<char*>(&numberOfLayers), 
+    loadFile.read(reinterpret_cast<char*>(&numberOfLayers),
                   sizeof(numberOfLayers));
     elementsPerLayer.resize(numberOfLayers);
-    loadFile.read(reinterpret_cast<char*>(&elementsPerLayer[0]), 
+    loadFile.read(reinterpret_cast<char*>(&elementsPerLayer[0]),
                   numberOfLayers*sizeof(elementsPerLayer[0]));
     
     allocate_NN_memory_on_host();
     
-    bool weightsPresent;    
-    loadFile.read(reinterpret_cast<char*>(&weightsPresent), 
+    bool weightsPresent;
+    loadFile.read(reinterpret_cast<char*>(&weightsPresent),
                   sizeof(weightsPresent));
     
-    if(weightsPresent) {        
-        loadFile.read(reinterpret_cast<char*>(&bias.hostData[0]), 
+    if (weightsPresent) {
+        loadFile.read(reinterpret_cast<char*>(&bias.hostData[0]),
                       bias.hostData.size()*sizeof(cl_float));
         weights.readFromDevice(*queue);
-        loadFile.read(reinterpret_cast<char*>(&weights.hostData[0]), 
-                      weights.hostData.size()*sizeof(cl_float));   
+        loadFile.read(reinterpret_cast<char*>(&weights.hostData[0]),
+                      weights.hostData.size()*sizeof(cl_float));
     }
     
     neuralNetworkDefined = true;
