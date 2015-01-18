@@ -52,8 +52,8 @@ class nn {
     cl_float ce = 0.0;
     cl_float ce_test = 0.0;
     
-    cl_uint minibatchSize = 128;
-    cl_float learningRate = 0.3f;  // Typìcal value 0.3
+    cl_uint minibatchSize = 256;
+    cl_float learningRate = 0.093f;  // Typìcal value 0.3
     cl_float momentum = 0.9f;      // Typical value 0.9
     size_t maxEpochs = 100000;      // Typical value 5000000
     cl_float minError = 0.001f;     // Typical value 0.01

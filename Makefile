@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-g --std=c++11 -Wall
+CFLAGS=-O3 --std=c++11 -Wall
 LIBFLAGS=-lOpenCL -pthread
 
 HEADERS=nn.hpp OpenCLKernels.hpp common.hpp mg.hpp mnist.hpp dng.hpp cli.hpp

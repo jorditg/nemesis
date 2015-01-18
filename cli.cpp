@@ -35,7 +35,7 @@ void cli::set(std::istringstream & is, const std::string & cmd) {
     if (token == "lr" || token == "momentum") {
         std::string val;
         is >> val;
-        cl_float v;
+        cl_float v = 0.0f;
         try {
             v = std::stof(val);
         } catch(const std::invalid_argument & ia) {

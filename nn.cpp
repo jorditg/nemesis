@@ -460,16 +460,19 @@ void nn::print_results_data_with_L2_regularization(
                             cl_float ce1_test,
                             cl_float ce2_test,
                             cl_float ce_test) {
+    cl_uint ctrain = percentage_classification_results_train();
+    cl_uint ctest = percentage_classification_results_test();
+    
     std::cout << std::fixed << std::setprecision(6)
               << epoch << "\t"
               << ce1 << "\t"
               << ce2 << "\t"
               << ce << "\t"
-              << percentage_classification_results_train() << "%\t"
+              << ctrain << "%\t"
               << ce1_test << "\t"
               << ce2_test << "\t"
               << ce_test << "\t"
-              << percentage_classification_results_test() << "%\n";
+              << ctest << "%\n";
 }
 
 void nn::print_results_data_header() {
@@ -544,7 +547,8 @@ void nn::train() {
                   weights_host,
                   weights_offsets,
                   bias_host,
-                  bias_offsets);
+                  bias_offsets,
+                  increment_weights_host);
 #endif
     
     if (enableL2Regularization)
@@ -557,10 +561,17 @@ void nn::train() {
             stopTraining = false;
             break;
         }
+
+        if (enableMomentumRule) {
+            update_momentum_rule_Hinton2013(epoch);
+        }
         
 #if DROPOUT
-          dropout.weigths_dropout();
+          // dropout and load to OpenCL device
+          dropout.dropout_neurons();
           weights.writeToDevice(*queue);
+          increment_weights.writeToDevice(*queue);
+          bias.writeToDevice(*queue);
 #endif
         // wait for minibatch thread to finish
         fut.get();
@@ -569,11 +580,20 @@ void nn::train() {
         t.writeToDevice(*queue, minibatch_size_output_bytes);
         // launch next minibatch calculation
         fut = std::async(&minibatch_generator::load_generated_minibatch, &mg);
-        if (enableNAG) {
-            NAG_preupdate();
-        }    
         
-        FF_train();
+        if (enableNAG) NAG_preupdate();
+        FF_train();        
+        BP();
+        if (enableNAG) NAG_postupdate();
+        WA();
+
+#if DROPOUT
+        // update weights and bias into dropout class controller    
+        weights.readFromDevice(*queue);
+        increment_weights.readFromDevice(*queue);
+        bias.readFromDevice(*queue);
+        dropout.update_from_last_dropout();
+#endif
         
         if (epoch % printEpochs == 0) {
 #if DROPOUT
@@ -581,28 +601,18 @@ void nn::train() {
             // by 0.5 in order to make the correct inference
             dropout.transfer_all_weights_to_nn();
             weights.writeToDevice(*queue);
+            bias.writeToDevice(*queue);
             matrix_cl_float W(weights);
-            W.set(weights.hostData.size(), 1);
+            W.set(weights.hostData.size(), 1);            
             openclKernels->runMatrixScalarMultiplication(W, 0.5f);
+            matrix_cl_float B(bias);
+            B.set(bias.hostData.size(), 1);
+            openclKernels->runMatrixScalarMultiplication(B, 0.5f);
 #endif
             print_data();
-        }
-        if (ce < minError) break;
-        
-        BP();
-        
-        if (enableNAG) {
-            NAG_postupdate();
-        }
-        WA();
-        
-#if DROPOUT
-            weights.readFromDevice(*queue);
-            dropout.weights_update_from_last_dropout();
-#endif
-        if (enableMomentumRule) {
-            update_momentum_rule_Hinton2013(epoch);
-        }
+            if (ce < minError) break;
+        }        
+                
     }
       
     trainRunning = false;
