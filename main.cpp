@@ -12,9 +12,7 @@
 #include "nn.hpp"
 #include "cli.hpp"
 
-/*
- *
- */
+
 int main(int argc, char** argv) {
     const std::string train_file = "train-images.idx3-ubyte";
     const std::string train_labels_file = "train-labels.idx1-ubyte";
